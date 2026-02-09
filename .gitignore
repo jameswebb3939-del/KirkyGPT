@@ -1,8 +1,49 @@
+# Python
 __pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environments
 .venv/
-.localstack/
+venv/
+env/
+
+# Pyenv
+.python-version.local
+
+# Testing
 .pytest_cache/
-*.log
-*.tmp
+.coverage
+htmlcov/
+
+# Editors / IDEs
 .vscode/
 .idea/
+
+# Logs / temp
+*.log
+*.tmp
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Hugging Face / ML caches
+.cache/
+.cache/huggingface/
+.cache/torch/
+
+# Model artifacts
+artifacts/
+checkpoints/
+outputs/
+runs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local services
+.localstack/

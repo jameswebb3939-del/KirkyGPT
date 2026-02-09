@@ -1,1 +1,272 @@
-#write here
+from __future__ import annotations
+from dataclasses import dataclass
+from typing import Any, Iterable, Literal, Sequence, Optional
+import asyncio
+import time
+import logging
+
+import torch
+from transformers import AutoTokenizer, AutoModelForCausalLM, set_seed, PreTrainedTokenizerBase, PreTrainedModel
+
+from llm_followups.utils.config import Settings
+from llm_followups.tuning.validate import (
+    validate_followup_list,
+    try_repair_to_followups,
+    fallback_followups,
+)
+from llm_followups.server.schemas import ChatMessage
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class GenerationRequest:
+    messages: Sequence[ChatMessage]
+    max_new_tokens: int
+    temperature: float
+    top_p: float
+    seed: int | None
+
+
+@dataclass(frozen=True)
+class GenerationResult:
+    raw_text: str
+    final_text: str
+    used_fallback: bool
+    used_repair: bool
+    latency_ms: int
+
+
+class LLMRuntime:
+    def __init__(self, settings: Settings) -> None:
+        self._settings = settings
+        self._tokenizer: Optional[PreTrainedTokenizerBase] = None
+        self._model: Optional[PreTrainedModel] = None
+        self._loaded: bool = False
+        self._lock = asyncio.Lock()
+        # resolved device ("cpu" or "cuda")
+        self._device: str = "cpu"
+        self._adapter_loaded: bool = False
+
+    async def load(self) -> None:
+        if self._loaded:
+            return
+
+        # Resolve device from settings (support 'auto', 'cpu', 'cuda', and fallback to cpu)
+        settings_device = getattr(self._settings, "device", "cpu")
+        resolved: str
+        if settings_device == "auto":
+            resolved = "cuda" if torch.cuda.is_available() else "cpu"
+        elif settings_device == "cuda":
+            resolved = "cuda" if torch.cuda.is_available() else "cpu"
+            if resolved == "cpu":
+                logger.warning("Requested CUDA but CUDA is not available; falling back to CPU")
+        elif settings_device == "cpu":
+            resolved = "cpu"
+        else:
+            # Unknown value — default to cpu but log
+            resolved = "cpu"
+            logger.warning("Unknown device setting '%s', defaulting to cpu", settings_device)
+
+        self._device = resolved
+        torch_device = torch.device("cuda" if resolved == "cuda" else "cpu")
+
+        # Tokenizer: ensure pad token exists
+        tokenizer = AutoTokenizer.from_pretrained(self._settings.model_name, use_fast=True)
+        if tokenizer.pad_token is None:
+            # fallback to eos_token if pad not set
+            if tokenizer.eos_token is not None:
+                tokenizer.pad_token = tokenizer.eos_token
+            else:
+                # As a last resort, set pad token to '<pad>' and add to vocab if needed
+                tokenizer.add_special_tokens({"pad_token": "<pad>"})
+        # After this, pad_token_id should be set
+        if tokenizer.pad_token_id is None:
+            # convert eos token to id if possible
+            if tokenizer.eos_token is not None:
+                tokenizer.pad_token_id = tokenizer.convert_tokens_to_ids(tokenizer.eos_token)
+
+        # Model: CPU-first approach; avoid float16 on CPU
+        model = AutoModelForCausalLM.from_pretrained(self._settings.model_name)
+        model.to(torch_device)
+        model.eval()
+
+        # Adapter support is a stub unless PEFT is integrated
+        if self._settings.adapter_path is not None:
+            # adapter provided but not yet supported
+            logger.warning("Adapter path provided but PEFT support not yet integrated; adapter not loaded")
+            self._adapter_loaded = False
+        else:
+            # no adapter requested
+            self._adapter_loaded = False
+
+        self._tokenizer = tokenizer
+        self._model = model
+        self._loaded = True
+
+    def is_loaded(self) -> bool:
+        return self._loaded
+
+    def device_str(self) -> str:
+        return self._device
+
+    def model_name(self) -> str:
+        return self._settings.model_name
+
+    def adapter_loaded(self) -> bool:
+        return self._adapter_loaded
+
+    def build_prompt(self, messages: Sequence[ChatMessage]) -> str:
+        # Determine bullet character preference
+        bullet_pref = self._settings.bullet_style
+        if bullet_pref == "asterisk":
+            bullet_char = "*"
+        else:
+            # if 'dash' or 'either', prefer dash for stability
+            bullet_char = "-"
+
+        sys_instruction = (
+            f"Return at least {self._settings.min_questions} follow-up questions."
+            " Output ONLY a bullet list using the following rules:\n"
+            f"- Use '{bullet_char}' as the bullet marker on each line.\n"
+            "- Do not include any prose before or after the bullet list.\n"
+            "- Each bullet must be a question and end with a question mark ('?').\n"
+            "- Do not include numbering or extra commentary."
+        )
+
+        parts: list[str] = []
+        parts.append(sys_instruction)
+
+        # Append conversation transcript, preserving order
+        for message in messages:
+            role = message.role
+            content = message.content.strip()
+            if role == "user":
+                parts.append(f"User: {content}")
+            elif role == "assistant":
+                parts.append(f"Assistant: {content}")
+            else:
+                # Unknown role — include generically
+                parts.append(f"{role.capitalize()}: {content}")
+
+        # Final assistant cue
+        parts.append("Assistant:")
+
+        return "\n\n".join(parts)
+
+    def enforce_followup_format(self, text: str, *, prompt_summary: str | None = None) -> tuple[str, bool, bool]:
+        # If format enforcement is disabled, return trimmed text and no flags
+        if not self._settings.enforce_format:
+            return (text.strip(), False, False)
+
+        # Validate the raw text
+        validation = validate_followup_list(
+            text,
+            min_questions=self._settings.min_questions,
+            bullet_style=self._settings.bullet_style,
+            require_question_mark=True,
+            forbid_extra_text=True,
+        )
+
+        # If valid, return normalized_text (or stripped original) and flags
+        if validation.ok:
+            normalized = validation.normalized_text or text.strip()
+            return (normalized, False, False)
+
+        # Attempt repair: choose repair style (prefer configured style, fallback to dash)
+        repair_style = (
+            self._settings.bullet_style
+            if self._settings.bullet_style in ("dash", "asterisk")
+            else "dash"
+        )
+
+        repaired = try_repair_to_followups(text, min_questions=self._settings.min_questions, bullet_style=repair_style)
+        if repaired is not None:
+            return (repaired, True, False)
+
+        # Fallback: attempt to craft guaranteed valid bullets using provided prompt_summary hint
+        fallback = fallback_followups(prompt_summary=prompt_summary, min_questions=self._settings.min_questions, bullet_style=repair_style)
+        return (fallback, False, True)
+
+    def make_request(self, messages: Sequence[ChatMessage], *, max_new_tokens: int | None = None, temperature: float | None = None, top_p: float | None = None, seed: int | None = None) -> GenerationRequest:
+        # Resolve effective values without mutating settings
+        eff_max_new_tokens = max_new_tokens if max_new_tokens is not None else self._settings.max_new_tokens
+        eff_temperature = temperature if temperature is not None else self._settings.temperature
+        eff_top_p = top_p if top_p is not None else self._settings.top_p
+        eff_seed = seed if seed is not None else self._settings.seed
+
+        # Validate ranges and types
+        if not isinstance(eff_max_new_tokens, int) or eff_max_new_tokens < 1:
+            raise ValueError("max_new_tokens must be an integer >= 1")
+        # Cap to a reasonable upper limit to avoid runaway requests
+        if eff_max_new_tokens > 4096:
+            raise ValueError("max_new_tokens too large")
+
+        if not (isinstance(eff_temperature, (int, float)) and eff_temperature >= 0.0 and eff_temperature <= 2.0):
+            raise ValueError("temperature must be a number between 0.0 and 2.0")
+
+        if not (isinstance(eff_top_p, (int, float)) and 0.0 < eff_top_p <= 1.0):
+            raise ValueError("top_p must be in range (0.0, 1.0]")
+
+        # seed may be None or int
+        if eff_seed is not None and not isinstance(eff_seed, int):
+            raise ValueError("seed must be an integer or None")
+
+        return GenerationRequest(messages=messages, max_new_tokens=eff_max_new_tokens, temperature=float(eff_temperature), top_p=float(eff_top_p), seed=eff_seed)
+
+    async def generate(self, req: GenerationRequest) -> GenerationResult:
+        if not self.is_loaded():
+            raise RuntimeError("Model not loaded")
+
+        t0 = time.time()
+
+        async with self._lock:
+            if req.seed is not None:
+                set_seed(req.seed)
+
+            prompt = self.build_prompt(req.messages)
+
+            if self._tokenizer is None or self._model is None:
+                raise RuntimeError("Tokenizer or model not initialized")
+
+            # Tokenize and move inputs to the configured device
+            inputs = self._tokenizer(prompt, return_tensors="pt")
+            device = torch.device("cuda" if self._device == "cuda" else "cpu")
+            inputs = {k: v.to(device) for k, v in inputs.items()}
+
+            # Store input length before generation
+            input_len = inputs.get("input_ids").shape[1]
+
+            do_sample = req.temperature > 0.0
+
+            # Run generation with inference mode and explicit token ids
+            with torch.inference_mode():
+                gen_output = self._model.generate(
+                    **inputs,
+                    max_new_tokens=req.max_new_tokens,
+                    temperature=req.temperature,
+                    top_p=req.top_p,
+                    do_sample=do_sample,
+                    pad_token_id=self._tokenizer.pad_token_id,
+                    eos_token_id=self._tokenizer.eos_token_id,
+                )
+
+        # slice to only the newly generated tokens
+        generated_ids = gen_output[:, input_len:]
+
+        # Decode only generated portion
+        raw_text = self._tokenizer.decode(generated_ids[0], skip_special_tokens=True).strip()
+
+        # Extract prompt_summary from last user message if available
+        prompt_summary: str | None = None
+        for msg in reversed(req.messages):
+            if msg.role == "user":
+                prompt_summary = msg.content[:100]  # use first 100 chars of last user msg
+                break
+
+        final_text, used_repair, used_fallback = self.enforce_followup_format(raw_text, prompt_summary=prompt_summary)
+
+        t1 = time.time()
+        latency_ms = int((t1 - t0) * 1000)
+
+        return GenerationResult(raw_text=raw_text, final_text=final_text, used_fallback=used_fallback, used_repair=used_repair, latency_ms=latency_ms)
