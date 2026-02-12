@@ -1,1 +1,154 @@
-#write here
+from __future__ import annotations
+from dataclasses import dataclass
+from typing import Iterable, Iterator, Literal, Sequence, Optional, Dict, List
+from datasets import Dataset, DatasetDict, load_dataset
+from transformers import PreTrainedTokenizerBase
+
+@dataclass(frozen=True)
+class DatasetConfig:
+    source: str = "tatsu-lab/alpaca"
+    split: str = "train"
+    text_field: str = "text"
+    max_length: int = 512
+    shuffle: bool = True
+    seed: int | None = None
+    num_proc: int | None = None
+    format: Literal["raw_text", "chat_messages"] = "raw_text"
+
+def load_raw_dataset(cfg: DatasetConfig) -> Dataset:
+    if not cfg.source:
+        raise ValueError("cfg.source is empty")
+
+    loaded = load_dataset(cfg.source)
+
+    if isinstance(loaded, DatasetDict):
+        if cfg.split not in loaded.keys():
+            raise ValueError(f"Requested split '{cfg.split}' not in available splits: {list(loaded.keys())}")
+        ds = loaded[cfg.split]
+    elif isinstance(loaded, Dataset):
+        ds = loaded
+    else:
+        raise TypeError("Unexpected return from load_dataset: expected Dataset or DatasetDict")
+
+    if cfg.shuffle:
+        seed = cfg.seed if cfg.seed is not None else 42
+        ds = ds.shuffle(seed=seed)
+
+    return ds
+    
+def prepare_training_text(ds: Dataset, *, text_field: str, format: Literal["raw_text", "chat_messages"]) -> Dataset:
+    if format not in ("raw_text", "chat_messages"):
+        raise ValueError("format must be one of 'raw_text' or 'chat_messages'")
+
+    if format == "raw_text":
+        if text_field in ds.column_names:
+            use_field = text_field
+
+            def map_fn(batch: Dict[str, List]) -> Dict[str, List[str]]:
+                texts = []
+                for t in batch[use_field]:
+                    s = "" if t is None else str(t)
+                    texts.append(s.strip())
+                return {"text": texts}
+        else:
+            # fallback to Alpaca-style fields
+            required = ("instruction", "output")
+            if all(f in ds.column_names for f in required):
+                def map_fn(batch: Dict[str, List]) -> Dict[str, List[str]]:
+                    texts = []
+                    instrs = batch.get("instruction", [])
+                    inputs = batch.get("input", [None] * len(instrs))
+                    outputs = batch.get("output", [None] * len(instrs))
+                    for instruction, inp, out in zip(instrs, inputs, outputs):
+                        instruction = "" if instruction is None else str(instruction).strip()
+                        out = "" if out is None else str(out).strip()
+                        inp = "" if inp is None else str(inp).strip()
+                        if inp:
+                            txt = f"### Instruction:\n{instruction}\n\n### Input:\n{inp}\n\n### Response:\n{out}"
+                        else:
+                            txt = f"### Instruction:\n{instruction}\n\n### Response:\n{out}"
+                        texts.append(txt.strip())
+                    return {"text": texts}
+            else:
+                raise ValueError("Missing text_field and no fallback fields found (instruction/output)")
+
+        ds = ds.map(map_fn, batched=True, remove_columns=[])
+        ds = ds.filter(lambda ex: bool(ex.get("text") and str(ex["text"]).strip()))
+        return ds
+
+    # chat_messages format
+    if format == "chat_messages":
+        if "messages" not in ds.column_names:
+            raise ValueError("Expected 'messages' column for chat_messages format")
+
+        def map_chat(batch: Dict[str, List]) -> Dict[str, List[str]]:
+            texts: List[str] = []
+            msgs_batch = batch.get("messages", [])
+            for msgs in msgs_batch:
+                if not msgs or not isinstance(msgs, list):
+                    texts.append("")
+                    continue
+                parts: List[str] = []
+                for m in msgs:
+                    if not isinstance(m, dict):
+                        continue
+                    role = m.get("role", "")
+                    content = m.get("content", "")
+                    content = "" if content is None else str(content).strip()
+                    if not content:
+                        continue
+                    parts.append(f"{role.capitalize()}: {content}")
+                texts.append("\n".join(parts).strip())
+            return {"text": texts}
+
+        ds = ds.map(map_chat, batched=True, remove_columns=[])
+        ds = ds.filter(lambda ex: bool(ex.get("text") and str(ex["text"]).strip()))
+        return ds
+
+
+def tokenize_dataset(ds: Dataset, tokenizer: PreTrainedTokenizerBase, *, max_length: int, remove_columns: Optional[Sequence[str]] = None, num_proc: Optional[int] = None) -> Dataset:
+    if "text" not in ds.column_names:
+        raise ValueError("Dataset must contain a 'text' column to tokenize")
+
+    def tokenize_batch(batch: Dict[str, List]) -> Dict[str, List]:
+        texts = batch["text"]
+        enc = tokenizer(texts, truncation=True, max_length=max_length, padding=False)
+        return enc
+
+    tokenized = ds.map(tokenize_batch, batched=True, num_proc=num_proc)
+    if remove_columns is not None and len(remove_columns) > 0:
+        tokenized = tokenized.remove_columns([c for c in remove_columns if c in tokenized.column_names])
+    return tokenized
+
+
+
+def build_dataset(cfg: DatasetConfig, tokenizer: PreTrainedTokenizerBase) -> Dataset:
+    ds = load_raw_dataset(cfg)
+    ds = prepare_training_text(ds, text_field=cfg.text_field, format=cfg.format)
+
+    # keep 'text' column (useful for debugging) and remove other original columns
+    remove_columns = [col for col in ds.column_names if col != "text"]
+
+    ds = tokenize_dataset(ds, tokenizer, max_length=cfg.max_length, remove_columns=remove_columns, num_proc=cfg.num_proc)
+    return ds
+
+def summarize_dataset(ds: Dataset) -> Dict[str, int | float]:
+    summary: Dict[str, int | float] = {}
+    n = len(ds)
+    summary["rows"] = n
+
+    if "text" in ds.column_names:
+        texts = ds["text"]
+        empty_count = sum(1 for t in texts if not (t and str(t).strip()))
+        summary["empty_text_rows"] = empty_count
+        summary["fraction_empty_text"] = (empty_count / n) if n > 0 else 0.0
+
+    if "input_ids" in ds.column_names:
+        ids_col = ds["input_ids"]
+        lengths = [len(ids) for ids in ids_col if ids is not None]
+        if lengths:
+            summary["min_len"] = min(lengths)
+            summary["mean_len"] = sum(lengths) / len(lengths)
+            summary["max_len"] = max(lengths)
+
+    return summary

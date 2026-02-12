@@ -13,66 +13,53 @@ class ValidationResult:
 def validate_followup_list(text: str, *, min_questions: int = 3, bullet_style: Literal["dash","asterisk","either"] = "either", require_question_mark: bool = True, forbid_extra_text: bool = True) -> ValidationResult:
     """
     Validates a list of follow-up questions formatted as bullet points.
-    
-    Args:
-        text: Raw text containing bullet items
-        min_questions: Minimum number of items required
-        bullet_style: Which bullet characters to accept
-        require_question_mark: Whether each item must end with ?
-        forbid_extra_text: Whether to disallow non-bullet lines
-    
-    Returns:
-        ValidationResult with validation status, item count, errors, and normalized text
     """
-    text = text.strip()
+    if text is None or text.strip() == "":
+        return ValidationResult(False, 0, ["No content provided"], None)
+
     errors: list[str] = []
-    # Split into lines and filter empty ones
-    lines = [line.strip() for line in text.split('\n') if line.strip()]
-    if not lines:
-        errors.append("No content provided")
-        return ValidationResult(ok=False, num_items=0, errors=errors, normalized_text=None)
-    # Extract bullet items
-    bullet_items: list[str] = []
-    line_number = 0
-    for line_number, line in enumerate(lines, 1):
-        # Check if line starts with a bullet
-        is_dash = line.startswith('-')
-        is_asterisk = line.startswith('*')
-        if not (is_dash or is_asterisk):
-            # Non-bullet line found
+    items: list[str] = []
+    lines = text.splitlines()
+
+    if bullet_style == "dash":
+        accepted_markers = {"-"}
+    elif bullet_style == "asterisk":
+        accepted_markers = {"*"}
+    else:
+        accepted_markers = {"-", "*"}
+
+    for idx, line in enumerate(lines, 1):
+        if not line.strip():
+            continue
+        marker, content = parse_bullet_line(line)
+        if marker is None:
             if forbid_extra_text:
-                errors.append(f"Found non-bullet text on line {line_number}: '{line}'")
+                errors.append(f"Found non-bullet text on line {idx}: '{line.rstrip()}'.")
             continue
-        # Validate bullet style
-        if bullet_style == "dash" and not is_dash:
-            errors.append(f"Line {line_number} uses * but style is 'dash' only")
+        if marker not in accepted_markers:
+            errors.append(f"Wrong bullet marker '{marker}' on line {idx}: '{line.rstrip()}'.")
             continue
-        elif bullet_style == "asterisk" and not is_asterisk:
-            errors.append(f"Line {line_number} uses - but style is 'asterisk' only")
+        content_norm = normalize_item_text(content)
+        if not content_norm:
+            errors.append(f"Empty content after bullet on line {idx}.")
             continue
-        # Extract content (remove bullet and whitespace)
-        content = line[1:].strip()
-        if not content:
-            errors.append(f"Line {line_number} has empty content after bullet")
-            continue
-        # Check for question mark if required
-        if require_question_mark and not content.endswith('?'):
-            errors.append(f"Item {len(bullet_items) + 1} does not end with ?")
-        bullet_items.append(content)
-    num_items = len(bullet_items)
-    # Check minimum questions requirement
-    if num_items < min_questions:
-        errors.append(f"Only {num_items} questions found, need at least {min_questions}")
-    # Determine if validation passed
-    ok = len(errors) == 0    
-    # Build normalized text
+        item_errs = validate_item(content_norm, require_question_mark=require_question_mark)
+        for err in item_errs:
+            errors.append(f"Line {idx}: {err}")
+        if not item_errs:
+            items.append(content_norm)
+
+    if len(items) < min_questions:
+        errors.append(f"Only {len(items)} questions found, need at least {min_questions}.")
+
+    ok = (len(errors) == 0)
     normalized_text = None
     if ok:
-        if bullet_style == "asterisk":
-            normalized_text = '\n'.join(f"* {item}" for item in bullet_items)
-        else:  # dash or either, default to dash
-            normalized_text = '\n'.join(f"- {item}" for item in bullet_items)
-    return ValidationResult(ok=ok, num_items=num_items, errors=errors, normalized_text=normalized_text)
+        out_style = choose_output_bullet_style(bullet_style)
+        marker = "-" if out_style == "dash" else "*"
+        normalized_text = "\n".join(f"{marker} {item}" for item in items)
+
+    return ValidationResult(ok, len(items), errors, normalized_text)
 
 def normalize_bullets(text: str, *, style: Literal["dash","asterisk"] = "dash") -> str:
     """
@@ -86,74 +73,30 @@ def normalize_bullets(text: str, *, style: Literal["dash","asterisk"] = "dash") 
     """
     out_lines: list[str] = []
     bullet_char = "*" if style == "asterisk" else "-"
-
+    marker_set = accepted_markers_for_style("either")
     for line in text.splitlines():
-        if not line:
+        marker, content = parse_bullet_line(line)
+        if marker not in marker_set:
             continue
-        # match a bullet at start (allow leading whitespace)
-        m = re.match(r"^\s*([-\*])\s*(.*)$", line)
-        if not m:
-            # not a bullet line -> skip
+        content_norm = normalize_item_text(content)
+        if not content_norm:
             continue
-        content = m.group(2).strip()
-        if not content:
-            # empty content after bullet -> skip
-            continue
-        # normalize internal whitespace
-        content = " ".join(content.split())
-        out_lines.append(f"{bullet_char} {content}")
-
-    return "\n".join(out_lines)
+        out_lines.append(f"{bullet_char} {content_norm}")
+    return '\n'.join(out_lines)
 
 
 def extract_bullet_items(text: str, *, bullet_style: Literal["dash","asterisk","either"] = "either") -> list[str]:
-    """
-    Extract bullet item contents from text.
-    
-    Args:
-        text: Text containing bullet items
-        bullet_style: "dash" (only -), "asterisk" (only *), or "either" (- or *)
-    
-    Returns:
-        list[str] of bullet contents (without markers), in original order
-    """
-    # Step 1: Normalize input
-    if text is None or not text or not text.strip():
+    if text is None or not text.strip():
         return []
-    text = text.strip()
-    
-    # Step 3: Determine valid bullet prefixes
-    valid_prefixes = set()
-    if bullet_style in ("dash", "either"):
-        valid_prefixes.add("-")
-    if bullet_style in ("asterisk", "either"):
-        valid_prefixes.add("*")
-    
-    # Step 2 & 4-8: Split lines and extract bullets
-    bullets = []
+    accepted_markers = accepted_markers_for_style(bullet_style)
+    items = []
     for line in text.splitlines():
-        # Step 4: Strip whitespace
-        line = line.strip()
-        if not line:
-            # Step 4: Skip empty lines
-            continue
-        
-        # Step 5: Detect bullet (first char must be a valid prefix)
-        if line[0] not in valid_prefixes:
-            # Not a valid bullet line -> skip
-            continue
-        
-        # Step 6: Extract content (remove prefix and optional space after)
-        content = line[1:]
-        if content.startswith(" "):
-            content = content[1:]
-        content = content.strip()
-        
-        # Step 7: Store if non-empty
-        if content:
-            bullets.append(content)
-    
-    return bullets
+        marker, content = parse_bullet_line(line)
+        if marker in accepted_markers:
+            content_norm = normalize_item_text(content)
+            if content_norm:
+                items.append(content_norm)
+    return items
 
 
 def try_repair_to_followups(text: str, *, min_questions: int = 3, bullet_style: Literal["dash","asterisk"] = "dash") -> str | None:
@@ -174,10 +117,10 @@ def try_repair_to_followups(text: str, *, min_questions: int = 3, bullet_style: 
     # Step 2: Extract bullets (allow either style when repairing)
     items = extract_bullet_items(text, bullet_style="either")
 
-    # Step 3: Filter invalid items (strip and require trailing '?')
+    # Step 3: Filter invalid items (normalize and require trailing '?')
     valid_items: list[str] = []
     for item in items:
-        s = item.strip()
+        s = normalize_item_text(item)
         if not s:
             continue
         if not s.endswith("?"):
@@ -188,18 +131,12 @@ def try_repair_to_followups(text: str, *, min_questions: int = 3, bullet_style: 
     if len(valid_items) < min_questions:
         return None
 
-    # Step 5: Ensure items are clean (no leading bullets, trimmed)
-    normalized_items = [it.strip().lstrip("-* ") for it in valid_items]
-
-    # Step 6: Rebuild normalized bullet list
+    # Step 5: Rebuild normalized bullet list
     bullet_prefix = "*" if bullet_style == "asterisk" else "-"
-    lines = [f"{bullet_prefix} {it}" for it in normalized_items]
+    lines = [f"{bullet_prefix} {it}" for it in valid_items]
     normalized_text = "\n".join(lines)
 
-    # Step 7: Final cleanup
-    normalized_text = normalized_text.strip()
-
-    # Step 8: Return repaired output
+    # Step 6: Return repaired output
     return normalized_text
 
 
@@ -281,5 +218,44 @@ def fallback_followups(prompt_summary: str | None = None, *, min_questions: int 
     # Step 7: Final checks and return
     output_text = output_text.strip()
     return output_text
-        
-            
+
+def accepted_markers_for_style(bullet_style: Literal["dash","asterisk","either"]) -> set[str]:
+    if bullet_style == "dash":
+        return {"-"}
+    elif bullet_style == "asterisk":
+        return {"*"}
+    else:
+        return {"-", "*"}
+
+def choose_output_bullet_style(bullet_style: Literal["dash", "asterisk", "either"], *, default: Literal["dash","asterisk"]="dash") -> Literal["dash", "asterisk"]:
+    if bullet_style == "dash" or bullet_style == "asterisk":
+        return bullet_style
+    return default
+
+def parse_bullet_line(line: str) -> tuple[str | None, str]:
+    raw = line.rstrip("\n")
+    s = raw.lstrip()
+    if s == "":
+        return None, ""
+    if s[0] == "-" or s[0] == "*":
+        marker = s[0]
+        content = s[1:].strip()
+        return marker, content
+    else:
+        return None, raw.strip()
+    
+def normalize_item_text(item: str):
+    s = item.strip()
+    s = " ".join(s.split())
+    return s
+
+def validate_item(item: str, *, require_question_mark: bool = True) -> list[str]:
+    errs = []
+    s = item.strip()
+    if s == "":
+        errs.append("Empty bullet item")
+    if require_question_mark and not s.endswith("?"):
+        errs.append("Bullet does not end with ?")
+    if s == "?" or len(s) < 5:
+        errs.append("Too short")
+    return errs
