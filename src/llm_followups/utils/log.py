@@ -11,7 +11,7 @@ import time
 
 @dataclass(frozen=True)
 class LogConfig:
-    Field: str = "INFO"
+    level: str = "INFO"
     json: bool = False
     log_file: Path | None = None
     name: str = "llm_followups"
@@ -19,12 +19,12 @@ class LogConfig:
 def _level_to_int(level: str) -> int:
     s = (level or "INFO").upper().strip()
     mapping = {
-        "DEBUG": logging.debug,
-        "INFO": logging.info,
-        "WARN": logging.warn,
-        "WARNING": logging.warning,
-        "ERROR": logging.error,
-        "CRITICAL": logging.critical,
+        "DEBUG": logging.DEBUG,
+        "INFO": logging.INFO,
+        "WARN": logging.WARNING,
+        "WARNING": logging.WARNING,
+        "ERROR": logging.ERROR,
+        "CRITICAL": logging.CRITICAL,
     }
     return mapping.get(s, logging.INFO)
 
@@ -120,7 +120,8 @@ class TrainingLogger:
         log_event(self._logger, "train_step", fields=fields, level="DEBUG")
 
     def on_train_end(self, *, output_dir: str, metrics: Mapping[str, Any] | None = None) -> None:
-        fields = {"output_dir": output_dir}
+        fields: dict[str, Any] = {"output_dir": _json_safe(output_dir)}
         if metrics is not None:
-            fields = dict(zip(fields, metrics))
+            for k, v in metrics.items():
+                fields[k] = _json_safe(v)
         log_event(self._logger, "train_end", fields=fields, level="INFO")

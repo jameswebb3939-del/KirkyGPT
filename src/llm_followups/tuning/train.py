@@ -11,8 +11,7 @@ from transformers import TrainingArguments, Trainer, set_seed
 from transformers import DataCollatorForLanguageModeling
 
 from llm_followups.tuning.dataset import DatasetConfig, build_dataset, summarize_dataset
-#from llm_followups.tuning.log import Training logger -> THIS DOES NOT EXIST!!!
-from llm_followups.utils.config import Settings
+from llm_followups.utils.log import setup_logging, TrainingLogger, LogConfig
 
 @dataclass(frozen=True)
 class TrainConfig:
@@ -68,9 +67,10 @@ def load_model_and_tokenizer(model_name: str, *, device: str) -> tuple[AutoToken
 def build_trainer(cfg: TrainConfig, model, tokenizer, train_ds) -> Trainer:
     cfg.output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Do not mutate cfg (frozen dataclass)
-    fp16 = cfg.fp16 if cfg.device == "cuda" else False
-    bf16 = cfg.bf16 if cfg.device == "cuda" else False
+    # Determine resolved device from cfg.device to decide fp16/bf16
+    resolved = resolve_device(cfg.device)
+    fp16 = cfg.fp16 if resolved == "cuda" else False
+    bf16 = cfg.bf16 if resolved == "cuda" else False
 
     # TrainingArguments: max_steps and num_train_epochs are separate
     training_args = TrainingArguments(
@@ -100,47 +100,44 @@ def build_trainer(cfg: TrainConfig, model, tokenizer, train_ds) -> Trainer:
     return trainer
 
 def train(cfg: TrainConfig) -> Path:
-    # Remove TrainingLogger (not implemented)
+    # Validate config first
+    validate_train_config(cfg)
+
+    # Set up logging
+    log = setup_logging(LogConfig())
+    tlog = TrainingLogger(log)
 
     if cfg.seed is not None:
         set_seed(cfg.seed)
 
     device = resolve_device(cfg.device)
 
-    # Do not mutate cfg (frozen dataclass)
     tokenizer, model = load_model_and_tokenizer(cfg.model_name, device=device)
 
     train_ds = build_dataset(cfg.dataset, tokenizer)
     stats = summarize_dataset(train_ds)
+    tlog.on_dataset_summary(stats)
 
     trainer = build_trainer(cfg, model, tokenizer, train_ds)
 
+    tlog.on_train_start(dict(cfg.__dict__))
     trainer.train()
 
     trainer.save_model(str(cfg.output_dir))
-
     tokenizer.save_pretrained(str(cfg.output_dir))
+
+    # emit final metrics if available
+    try:
+        metrics = trainer.state.log_history[-1] if trainer.state.log_history else None
+    except Exception:
+        metrics = None
+    tlog.on_train_end(output_dir=str(cfg.output_dir), metrics=metrics)
 
     return cfg.output_dir
 
 def main(argv: list[str] | None = None) -> int:
-    try:
-        ds_cfg = DatasetConfig(...)
-
-        cfg = TrainConfig(
-            model_name="meta-llama//...",
-            output_dir=Path("outputs/run1"),
-            dataset=ds_cfg,
-            device="auto"
-        )
-
-        out_dir = train(cfg)
-
-        print(f"Training complete. Model saved to {out_dir}")
-        return 0
-    except Exception as e:
-        print(f"Training failed: {e}", file=sys.stderr)
-        return 1
+    print("This module exposes a `train(cfg)` function. Build a TrainConfig and call it.")
+    return 0
 
 def validate_train_config(cfg: TrainConfig) -> None:
     if cfg.batch_size < 1:
