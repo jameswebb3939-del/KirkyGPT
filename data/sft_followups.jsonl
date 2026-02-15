@@ -1,1 +1,9 @@
-write here
+{
+    "messages": [
+        {"role": "user", "content": "...user prompt..."}
+        {"role": "assistant", "content": "- Q1?\n- Q2?\n- Q3?"}
+    ],
+    "max_new_tokens": 128,
+    "temperature": 0.2,
+    "top_p": 0.9
+}
