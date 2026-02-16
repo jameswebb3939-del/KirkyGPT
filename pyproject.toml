@@ -1,1 +1,16 @@
-#write here
+[tool.pytest.ini_options]
+minversion = "8.0"
+addopts = "-q -ra"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+
+pythonpath = ["src"]
+
+asyncio_mode = "strict"
+
+markers = [
+  "unit: unit tests",
+  "integration: integration tests",
+]
