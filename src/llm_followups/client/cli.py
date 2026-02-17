@@ -21,6 +21,12 @@ class CliOptions:
     one_shot: str | None
 
 def build_arg_parser() -> argparse.ArgumentParser:
+    """
+    Create and configure the argument parser for the CLI.
+    
+    Returns:
+        ArgumentParser configured with CLI options for host, port, timeout, and model parameters.
+    """
     parser = argparse.ArgumentParser(
         description="LLM Followups Chat Client"
     )
@@ -36,6 +42,15 @@ def build_arg_parser() -> argparse.ArgumentParser:
     return parser
 
 def parse_cli_options(argv: list[str] | None = None) -> CliOptions:
+    """
+    Parse command-line arguments and return a CliOptions dataclass.
+    
+    Args:
+        argv: Optional list of command-line arguments. If None, uses sys.argv.
+    
+    Returns:
+        CliOptions with parsed configuration.
+    """
     parser = build_arg_parser()
     args = parser.parse_args(argv)
     base_url = f"http://{args.host}:{args.port}"
@@ -58,15 +73,43 @@ def parse_cli_options(argv: list[str] | None = None) -> CliOptions:
 
 
 async def health_check(client: httpx.AsyncClient, base_url: str) -> HealthResponse:
+    """
+    Perform a health check on the LLM server.
+    
+    Args:
+        client: HTTP async client for making requests.
+        base_url: Base URL of the server.
+    
+    Returns:
+        HealthResponse with server health information.
+    
+    Raises:
+        RuntimeError: If health check fails with non-200 status code.
+    """
     resp = await client.get(base_url + "/health")
     if resp.status_code != 200:
         raise RuntimeError(f"Health check failed with status {resp.status_code}: {resp.text[:200]}")
     return HealthResponse(**resp.json())
 
 def print_health(h: HealthResponse) -> None:
+    """
+    Print health response information to stdout.
+    
+    Args:
+        h: HealthResponse object to display.
+    """
     print(f"Here is the following health on:\nStatus: {h.status}\nModel Loaded: {h.model_loaded}\nModel Name: {h.model_name}\nDevice: {h.device}\nAdapter Loaded: {h.adapter_loaded}")
 
 def read_user_input(prompt: str = "> ") -> str | None:
+    """
+    Read user input from stdin, handling exit commands.
+    
+    Args:
+        prompt: Prompt string to display.
+    
+    Returns:
+        Stripped user input, or None if EOF or exit command is entered.
+    """
     try:
         line = input(prompt)
     except EOFError:
@@ -77,6 +120,16 @@ def read_user_input(prompt: str = "> ") -> str | None:
     return s
 
 def handle_local_command(cmd: str, history: list[ChatMessage]) -> Literal["not_command", "continue", "exit"]:
+    """
+    Handle local CLI commands like :reset, :history, and :quit.
+    
+    Args:
+        cmd: Command string to process.
+        history: Chat message history list to manipulate.
+    
+    Returns:
+        "not_command" if cmd doesn't start with ":", "continue" to continue REPL, or "exit" to quit.
+    """
     if not cmd.startswith(":"):
         return "not_command"
     if cmd == ":reset":
@@ -93,9 +146,34 @@ def handle_local_command(cmd: str, history: list[ChatMessage]) -> Literal["not_c
         return "continue"
 
 def update_history(history: list[ChatMessage], *, role: Literal["user", "assistant"], content: str) -> None:
+    """
+    Append a message to the chat history.
+    
+    Args:
+        history: Chat message history list.
+        role: Message role ('user' or 'assistant').
+        content: Message content text.
+    """
     history.append(ChatMessage(role=role, content=content))
 
 async def send_chat(client: httpx.AsyncClient, base_url: str, history: list[ChatMessage], *, max_new_tokens: int | None, temperature: float | None, top_p: float | None) -> str:
+    """
+    Send a chat request to the server and return the response.
+    
+    Args:
+        client: HTTP async client for making requests.
+        base_url: Base URL of the server.
+        history: Chat message history to send.
+        max_new_tokens: Maximum tokens to generate, or None to use server default.
+        temperature: Sampling temperature, or None to use server default.
+        top_p: Nucleus sampling parameter, or None to use server default.
+    
+    Returns:
+        Response text from the server.
+    
+    Raises:
+        RuntimeError: If chat request fails with non-200 status code.
+    """
     req = ChatRequest(messages=history, max_new_tokens=max_new_tokens, temperature=temperature, top_p=top_p)
     resp = await client.post(base_url + "/chat", json=req.model_dump())
     if resp.status_code != 200:
@@ -106,11 +184,26 @@ async def send_chat(client: httpx.AsyncClient, base_url: str, history: list[Chat
     return chat_response.response_text
 
 def print_assistant(text: str) -> None:
+    """
+    Print assistant response with blank lines before and after.
+    
+    Args:
+        text: Response text to print.
+    """
     print()
     print(f"{text}")
     print()
 
 async def run_repl(opts: CliOptions) -> int:
+    """
+    Run the interactive REPL (Read-Eval-Print Loop) chat interface.
+    
+    Args:
+        opts: CLI options configuration.
+    
+    Returns:
+        Exit code (0 for success, 2 if model not loaded).
+    """
     client = httpx.AsyncClient(timeout=opts.timeout_s)
     if opts.do_health_check:
         h = await health_check(client, opts.base_url)
@@ -140,6 +233,16 @@ async def run_repl(opts: CliOptions) -> int:
     return 0
 
 async def run_once(opts: CliOptions, message: str) -> int:
+    """
+    Run a single chat request (non-interactive mode).
+    
+    Args:
+        opts: CLI options configuration.
+        message: User message to send.
+    
+    Returns:
+        Exit code (0 for success, 2 if model not loaded).
+    """
     client = httpx.AsyncClient(timeout=opts.timeout_s)
     h = await health_check(client, opts.base_url)
     if not h.model_loaded:

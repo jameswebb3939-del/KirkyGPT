@@ -12,7 +12,19 @@ class ValidationResult:
 
 def validate_followup_list(text: str, *, min_questions: int = 3, bullet_style: Literal["dash","asterisk","either"] = "either", require_question_mark: bool = True, forbid_extra_text: bool = True) -> ValidationResult:
     """
-    Validates a list of follow-up questions formatted as bullet points.
+    Validate a list of follow-up questions formatted as bullet points.
+    
+    Checks for proper bullet markers, required question marks, and minimum count.
+    
+    Args:
+        text: Text to validate as bullet list.
+        min_questions: Minimum number of questions required.
+        bullet_style: Accepted bullet markers ("dash", "asterisk", or "either").
+        require_question_mark: Whether each item must end with '?'.
+        forbid_extra_text: Whether non-bullet text is an error.
+    
+    Returns:
+        ValidationResult with validation status and any errors.
     """
     if text is None or text.strip() == "":
         return ValidationResult(False, 0, ["No content provided"], None)
@@ -63,13 +75,17 @@ def validate_followup_list(text: str, *, min_questions: int = 3, bullet_style: L
 
 def normalize_bullets(text: str, *, style: Literal["dash","asterisk"] = "dash") -> str:
     """
-    Normalize bullets in `text`:
+    Normalize bullets in text to consistent format.
 
-    - preserve line order but only keep bullet lines (starting with '-' or '*')
-    - strip the bullet marker and normalize internal whitespace
-    - skip empty or non-bullet lines
-    - emit bullets using the chosen `style` ("dash" => '-', "asterisk" => '*')
-    - one space after the bullet, one bullet per line, joined by '\n'
+    Preserves line order, keeps only bullet lines, normalizes whitespace,
+    and emits bullets using the chosen style.
+    
+    Args:
+        text: Text with bullets to normalize.
+        style: Output bullet style ("dash" or "asterisk").
+    
+    Returns:
+        Text with normalized bullets.
     """
     out_lines: list[str] = []
     bullet_char = "*" if style == "asterisk" else "-"
@@ -86,6 +102,16 @@ def normalize_bullets(text: str, *, style: Literal["dash","asterisk"] = "dash") 
 
 
 def extract_bullet_items(text: str, *, bullet_style: Literal["dash","asterisk","either"] = "either") -> list[str]:
+    """
+    Extract bullet-pointed items from text.
+    
+    Args:
+        text: Text to extract bullets from.
+        bullet_style: Accepted bullet markers ("dash", "asterisk", or "either").
+    
+    Returns:
+        List of extracted bullet item contents.
+    """
     if text is None or not text.strip():
         return []
     accepted_markers = accepted_markers_for_style(bullet_style)
@@ -101,14 +127,17 @@ def extract_bullet_items(text: str, *, bullet_style: Literal["dash","asterisk","
 
 def try_repair_to_followups(text: str, *, min_questions: int = 3, bullet_style: Literal["dash","asterisk"] = "dash") -> str | None:
     """
-    Try to repair a piece of text into a normalized bullet list.
+    Attempt to repair malformed text into a valid bullet list of questions.
 
-    Follows the pseudocode:
-    - return None for empty input
-    - extract bullets allowing either marker
-    - keep only items that end with '?'
-    - require at least `min_questions`
-    - emit bullets using the requested `bullet_style`
+    Extracts bullets, filters for question-marked items, and rebuilds normalized list.
+    
+    Args:
+        text: Text to repair.
+        min_questions: Minimum questions required for valid output.
+        bullet_style: Output bullet style ("dash" or "asterisk").
+    
+    Returns:
+        Repaired bullet list, or None if insufficient valid questions found.
     """
     # Step 1: Guard clauses
     if text is None or not text.strip():
@@ -145,10 +174,16 @@ def fallback_followups(prompt_summary: str | None = None, *, min_questions: int 
     """
     Generate a guaranteed valid bullet list of follow-up questions.
 
-    Always returns at least `min_questions` bullet items, each ending with '?'.
-    Optionally uses `prompt_summary` to tailor wording slightly (topic hint).
+    Always returns at least min_questions bullet items, each ending with '?'.
+    Optionally uses prompt_summary to tailor wording (topic-specific generation).
     
-    Returns a string with one bullet per line, never prose outside bullets.
+    Args:
+        prompt_summary: Optional hint text for generating topic-specific questions.
+        min_questions: Minimum number of questions to generate.
+        bullet_style: Output bullet style ("dash" or "asterisk").
+    
+    Returns:
+        String with one bullet per line, guaranteed valid format.
     """
     # Step 1: Choose bullet prefix
     prefix = "*" if bullet_style == "asterisk" else "-"

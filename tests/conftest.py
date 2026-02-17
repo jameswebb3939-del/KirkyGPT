@@ -9,6 +9,12 @@ import pytest
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
+    """
+    Register custom pytest command-line options.
+    
+    Args:
+        parser: pytest Parser to register options with.
+    """
     parser.addoption(
         "--sft-jsonl",
         action="store",
@@ -26,9 +32,12 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 @pytest.fixture(scope="session")
 def project_root() -> Path:
     """
-    Resolve repo root from tests/ directory.
-
-    Assumes tests/ is at: <root>/tests/
+    Get the project root directory path.
+    
+    Resolves the root by assuming tests/ is at <root>/tests/.
+    
+    Returns:
+        Project root Path.
     """
     return Path(__file__).resolve().parents[1]
 
@@ -36,8 +45,16 @@ def project_root() -> Path:
 @pytest.fixture(scope="session")
 def data_dir(project_root: Path, request: pytest.FixtureRequest) -> Path:
     """
-    Default data dir: <project_root>/data
-    Override with: --data-dir
+    Get the data directory path.
+    
+    Can be overridden with --data-dir flag, otherwise defaults to <project_root>/data.
+    
+    Args:
+        project_root: Project root fixture.
+        request: pytest request object.
+    
+    Returns:
+        Data directory Path.
     """
     override = request.config.getoption("--data-dir")
     if override:
@@ -49,11 +66,21 @@ def data_dir(project_root: Path, request: pytest.FixtureRequest) -> Path:
 def sft_jsonl_path(data_dir: Path, request: pytest.FixtureRequest) -> Path:
     """
     Resolve the SFT JSONL file path.
-
+    
     Priority:
-      1) --sft-jsonl
-      2) env var SFT_JSONL
-      3) <data_dir>/sft.jsonl
+      1) --sft-jsonl CLI flag
+      2) SFT_JSONL environment variable
+      3) <data_dir>/sft_followups.jsonl
+    
+    Args:
+        data_dir: Data directory fixture.
+        request: pytest request object.
+    
+    Returns:
+        Path to SFT JSONL file.
+    
+    Raises:
+        FileNotFoundError: If file not found.
     """
     cli_path = request.config.getoption("--sft-jsonl")
     if cli_path:
@@ -75,9 +102,16 @@ def sft_jsonl_path(data_dir: Path, request: pytest.FixtureRequest) -> Path:
 
 def iter_jsonl(path: Path) -> Iterator[dict[str, Any]]:
     """
-    Iterate JSONL rows as dicts.
-    Skips empty lines.
-    Raises ValueError with line number on JSON parse issues.
+    Iterate over JSONL file, yielding each row as a dict.
+    
+    Args:
+        path: Path to JSONL file.
+    
+    Returns:
+        Iterator over parsed JSON objects.
+    
+    Raises:
+        ValueError: If JSON is malformed or object is not a dict.
     """
     with path.open("r", encoding="utf-8") as f:
         for lineno, raw in enumerate(f, 1):
@@ -97,6 +131,15 @@ def iter_jsonl(path: Path) -> Iterator[dict[str, Any]]:
 def sft_rows(sft_jsonl_path: Path) -> list[dict[str, Any]]:
     """
     Load all JSONL rows into memory.
+    
+    Args:
+        sft_jsonl_path: Path to SFT JSONL file fixture.
+    
+    Returns:
+        List of parsed JSONL rows as dicts.
+    
+    Raises:
+        ValueError: If no rows found in file.
     """
     rows = list(iter_jsonl(sft_jsonl_path))
     if not rows:

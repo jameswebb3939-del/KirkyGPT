@@ -39,6 +39,12 @@ class GenerationResult:
 
 class LLMRuntime:
     def __init__(self, settings: Settings) -> None:
+        """
+        Initialize the LLM runtime with configuration settings.
+        
+        Args:
+            settings: Settings object containing model and generation configuration.
+        """
         self._settings = settings
         self._tokenizer: Optional[PreTrainedTokenizerBase] = None
         self._model: Optional[PreTrainedModel] = None
@@ -49,6 +55,12 @@ class LLMRuntime:
         self._adapter_loaded: bool = False
 
     async def load(self) -> None:
+        """
+        Load the model and tokenizer from the configured model repository.
+        
+        Resolves the device (CPU or CUDA), loads the model and tokenizer,
+        handles pad token configuration, and attempts to load adapters if specified.
+        """
         if self._loaded:
             return
 
@@ -105,18 +117,51 @@ class LLMRuntime:
         self._loaded = True
 
     def is_loaded(self) -> bool:
+        """
+        Check if the model has been loaded.
+        
+        Returns:
+            True if model is loaded and ready for generation.
+        """
         return self._loaded
 
     def device_str(self) -> str:
+        """
+        Get the resolved device string.
+        
+        Returns:
+            Device name ("cpu" or "cuda").
+        """
         return self._device
 
     def model_name(self) -> str:
+        """
+        Get the configured model name.
+        
+        Returns:
+            Model name from settings.
+        """
         return self._settings.model_name
 
     def adapter_loaded(self) -> bool:
+        """
+        Check if an adapter has been loaded.
+        
+        Returns:
+            True if adapter is loaded.
+        """
         return self._adapter_loaded
 
     def build_prompt(self, messages: Sequence[ChatMessage]) -> str:
+        """
+        Build a prompt string from chat messages and system instructions.
+        
+        Args:
+            messages: Sequence of chat messages to format.
+        
+        Returns:
+            Formatted prompt string ready for tokenization.
+        """
         # Determine bullet character preference
         bullet_pref = self._settings.bullet_style
         if bullet_pref == "asterisk":
@@ -155,6 +200,19 @@ class LLMRuntime:
         return "\n\n".join(parts)
 
     def enforce_followup_format(self, text: str, *, prompt_summary: str | None = None) -> tuple[str, bool, bool]:
+        """
+        Enforce format compliance for follow-up question output.
+        
+        Validates text as bullet-point list, attempts repair if needed,
+        and falls back to generated questions if necessary.
+        
+        Args:
+            text: Raw output text from model.
+            prompt_summary: Optional summary of the original prompt for fallback generation.
+        
+        Returns:
+            Tuple of (formatted_text, used_repair, used_fallback).
+        """
         # If format enforcement is disabled, return trimmed text and no flags
         if not self._settings.enforce_format:
             return (text.strip(), False, False)
@@ -189,6 +247,22 @@ class LLMRuntime:
         return (fallback, False, True)
 
     def make_request(self, messages: Sequence[ChatMessage], *, max_new_tokens: int | None = None, temperature: float | None = None, top_p: float | None = None, seed: int | None = None) -> GenerationRequest:
+        """
+        Create and validate a generation request from message and parameters.
+        
+        Args:
+            messages: Chat messages to generate response for.
+            max_new_tokens: Max tokens to generate (or None for default).
+            temperature: Sampling temperature (or None for default).
+            top_p: Nucleus sampling parameter (or None for default).
+            seed: Random seed (or None for default).
+        
+        Returns:
+            GenerationRequest with validated parameters.
+        
+        Raises:
+            ValueError: If any parameter is out of valid range.
+        """
         # Resolve effective values without mutating settings
         eff_max_new_tokens = max_new_tokens if max_new_tokens is not None else self._settings.max_new_tokens
         eff_temperature = temperature if temperature is not None else self._settings.temperature
@@ -215,6 +289,18 @@ class LLMRuntime:
         return GenerationRequest(messages=messages, max_new_tokens=eff_max_new_tokens, temperature=float(eff_temperature), top_p=float(eff_top_p), seed=eff_seed)
 
     async def generate(self, req: GenerationRequest) -> GenerationResult:
+        """
+        Generate follow-up questions from a generation request.
+        
+        Args:
+            req: GenerationRequest with messages and parameters.
+        
+        Returns:
+            GenerationResult with raw text, formatted text, and metadata.
+        
+        Raises:
+            RuntimeError: If model is not loaded.
+        """
         if not self.is_loaded():
             raise RuntimeError("Model not loaded")
 

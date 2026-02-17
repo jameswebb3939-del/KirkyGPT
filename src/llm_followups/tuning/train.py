@@ -33,6 +33,15 @@ class TrainConfig:
     eval_steps: int | None = None
 
 def resolve_device(device: Literal["cpu", "cuda", "auto"]) -> str:
+    """
+    Resolve device specification to actual device string.
+    
+    Args:
+        device: Device specification ("cpu", "cuda", or "auto").
+    
+    Returns:
+        Resolved device string ("cpu" or "cuda").
+    """
     if device == "cpu":
         return "cpu"
     elif device == "cuda":
@@ -43,6 +52,16 @@ def resolve_device(device: Literal["cpu", "cuda", "auto"]) -> str:
         return "cpu"
     
 def load_model_and_tokenizer(model_name: str, *, device: str) -> tuple[AutoTokenizer, AutoModelForCausalLM]:
+    """
+    Load model and tokenizer from pretrained repository.
+    
+    Args:
+        model_name: Hugging Face model identifier.
+        device: Device to load model on ("cpu" or "cuda").
+    
+    Returns:
+        Tuple of (tokenizer, model).
+    """
     tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=True)
 
     # If pad_token is None, set it to eos_token or add a new pad token
@@ -65,6 +84,18 @@ def load_model_and_tokenizer(model_name: str, *, device: str) -> tuple[AutoToken
     return tokenizer, model
 
 def build_trainer(cfg: TrainConfig, model, tokenizer, train_ds) -> Trainer:
+    """
+    Create a Trainer instance for fine-tuning.
+    
+    Args:
+        cfg: TrainConfig with training configuration.
+        model: PreTrainedModel to train.
+        tokenizer: PreTrainedTokenizerBase for decoding.
+        train_ds: Training dataset.
+    
+    Returns:
+        Configured Trainer instance.
+    """
     cfg.output_dir.mkdir(parents=True, exist_ok=True)
 
     # Determine resolved device from cfg.device to decide fp16/bf16
@@ -100,6 +131,15 @@ def build_trainer(cfg: TrainConfig, model, tokenizer, train_ds) -> Trainer:
     return trainer
 
 def train(cfg: TrainConfig) -> Path:
+    """
+    Execute fine-tuning training with the specified configuration.
+    
+    Args:
+        cfg: TrainConfig with training parameters.
+    
+    Returns:
+        Path to the output directory with trained model.
+    """
     # Validate config first
     validate_train_config(cfg)
 
@@ -136,10 +176,28 @@ def train(cfg: TrainConfig) -> Path:
     return cfg.output_dir
 
 def main(argv: list[str] | None = None) -> int:
+    """
+    Main entry point (documentation only, use train() function directly).
+    
+    Args:
+        argv: Command-line arguments (unused).
+    
+    Returns:
+        Exit code.
+    """
     print("This module exposes a `train(cfg)` function. Build a TrainConfig and call it.")
     return 0
 
 def validate_train_config(cfg: TrainConfig) -> None:
+    """
+    Validate training configuration parameters.
+    
+    Args:
+        cfg: TrainConfig to validate.
+    
+    Raises:
+        ValueError: If any configuration parameter is invalid.
+    """
     if cfg.batch_size < 1:
         raise ValueError("batch_size must be >= 1")
     if cfg.grad_accum_steps < 1:

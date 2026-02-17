@@ -24,7 +24,16 @@ class Settings:
 
 def get_settings(env: Optional[dict[str, str]] = None) -> Settings:
     """
-    Reads env vars (or provided env dict), returns a Settings instance
+    Load Settings from environment variables or provided dict.
+    
+    Reads configuration from OS environment or custom dict, constructing
+    a Settings dataclass with all configuration parameters.
+    
+    Args:
+        env: Optional dict of environment variables. If None, uses os.environ.
+    
+    Returns:
+        Settings object with loaded configuration.
     """
     if env is None:
         env = os.environ
@@ -70,6 +79,12 @@ def get_settings(env: Optional[dict[str, str]] = None) -> Settings:
 
 def server_url(settings: Settings) -> str:
     """
-    Returns base URL
+    Construct server base URL from settings.
+    
+    Args:
+        settings: Settings object with server host and port.
+    
+    Returns:
+        Base URL string (e.g., "http://127.0.0.1:8000").
     """
     return f"http://{settings.server_host}:{settings.server_port}"

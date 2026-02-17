@@ -16,6 +16,19 @@ class DatasetConfig:
     format: Literal["raw_text", "chat_messages"] = "raw_text"
 
 def load_raw_dataset(cfg: DatasetConfig) -> Dataset:
+    """
+    Load a raw dataset from the configured source.
+    
+    Args:
+        cfg: DatasetConfig with source and split information.
+    
+    Returns:
+        Dataset loaded from the configured source and split.
+    
+    Raises:
+        ValueError: If source is empty or split not found.
+        TypeError: If load_dataset returns unexpected type.
+    """
     if not cfg.source:
         raise ValueError("cfg.source is empty")
 
@@ -37,6 +50,20 @@ def load_raw_dataset(cfg: DatasetConfig) -> Dataset:
     return ds
     
 def prepare_training_text(ds: Dataset, *, text_field: str, format: Literal["raw_text", "chat_messages"]) -> Dataset:
+    """
+    Prepare dataset for training by extracting and formatting text.
+    
+    Args:
+        ds: Input dataset.
+        text_field: Field name containing text (for raw_text format).
+        format: Format type - "raw_text" or "chat_messages".
+    
+    Returns:
+        Dataset with prepared text column.
+    
+    Raises:
+        ValueError: If format is invalid or required fields are missing.
+    """
     if format not in ("raw_text", "chat_messages"):
         raise ValueError("format must be one of 'raw_text' or 'chat_messages'")
 
@@ -107,6 +134,22 @@ def prepare_training_text(ds: Dataset, *, text_field: str, format: Literal["raw_
 
 
 def tokenize_dataset(ds: Dataset, tokenizer: PreTrainedTokenizerBase, *, max_length: int, remove_columns: Optional[Sequence[str]] = None, num_proc: Optional[int] = None) -> Dataset:
+    """
+    Tokenize dataset text and format for language model training.
+    
+    Args:
+        ds: Dataset with text column.
+        tokenizer: Tokenizer to use for encoding.
+        max_length: Maximum sequence length (truncation applied).
+        remove_columns: Columns to remove after tokenization.
+        num_proc: Number of processes for parallel tokenization.
+    
+    Returns:
+        Tokenized dataset ready for training.
+    
+    Raises:
+        ValueError: If dataset doesn't contain 'text' column.
+    """
     if "text" not in ds.column_names:
         raise ValueError("Dataset must contain a 'text' column to tokenize")
 
@@ -123,6 +166,18 @@ def tokenize_dataset(ds: Dataset, tokenizer: PreTrainedTokenizerBase, *, max_len
 
 
 def build_dataset(cfg: DatasetConfig, tokenizer: PreTrainedTokenizerBase) -> Dataset:
+    """
+    Build a complete training dataset from raw data.
+    
+    Loads raw data, prepares text, and tokenizes for training.
+    
+    Args:
+        cfg: DatasetConfig with dataset configuration.
+        tokenizer: PreTrainedTokenizerBase for tokenization.
+    
+    Returns:
+        Fully prepared and tokenized dataset.
+    """
     ds = load_raw_dataset(cfg)
     ds = prepare_training_text(ds, text_field=cfg.text_field, format=cfg.format)
 
@@ -133,6 +188,15 @@ def build_dataset(cfg: DatasetConfig, tokenizer: PreTrainedTokenizerBase) -> Dat
     return ds
 
 def summarize_dataset(ds: Dataset) -> Dict[str, int | float]:
+    """
+    Generate summary statistics for a dataset.
+    
+    Args:
+        ds: Dataset to summarize.
+    
+    Returns:
+        Dictionary with dataset statistics (row count, sequence lengths, etc.).
+    """
     summary: Dict[str, int | float] = {}
     n = len(ds)
     summary["rows"] = n

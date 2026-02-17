@@ -110,7 +110,7 @@ llm_followups/
 
 ## **Architecture Overview**
 
-### 1️⃣ Server Layer
+### Server Layer
 
 * `schemas.py` — Pydantic request/response models
 * `llm_runtime.py` — Model loading + generation + repair logic
@@ -123,7 +123,7 @@ Handles:
 
 ---
 
-### 2️⃣ Validation Layer
+### Validation Layer
 
 `validate_followup_list()` enforces:
 
@@ -145,7 +145,7 @@ ValidationResult(
 
 ---
 
-### 3️⃣ Repair Logic
+### Repair Logic
 
 If validation fails:
 
@@ -157,7 +157,7 @@ Ensures production safety.
 
 ---
 
-### 4️⃣ Dataset + Training Pipeline
+### Dataset + Training Pipeline
 
 Includes:
 
@@ -172,7 +172,7 @@ Supports SFT-style JSONL training data.
 
 ---
 
-### 5️⃣ JSONL Validator CLI
+### JSONL Validator CLI
 
 ```
 python scripts/validate_jsonl.py data/sft_followups.jsonl
