@@ -1,9 +1,1 @@
-{
-    "messages": [
-        {"role": "user", "content": "...user prompt..."}
-        {"role": "assistant", "content": "- Q1?\n- Q2?\n- Q3?"}
-    ],
-    "max_new_tokens": 128,
-    "temperature": 0.2,
-    "top_p": 0.9
-}
+{"messages":[{"role":"user","content":"...user prompt..."},{"role":"assistant","content":"- What specific output format do you want me to follow?\n- Are there any constraints (length, tone, libraries, style) I must respect?\n- What example input and expected output can you share so I can match your use case?"}],"max_new_tokens":128,"temperature":0.2,"top_p":0.9}
