@@ -63,7 +63,7 @@ def sft_jsonl_path(data_dir: Path, request: pytest.FixtureRequest) -> Path:
         if env_path:
             path = Path(env_path).expanduser().resolve()
         else:
-            path = (data_dir / "sft.jsonl").resolve()
+            path = (data_dir / "sft_followups.jsonl").resolve()
 
     if not path.exists() or not path.is_file():
         raise FileNotFoundError(
