@@ -1,5 +1,5 @@
 from __future__ import annotations
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Literal, Optional
 import sys
@@ -160,7 +160,7 @@ def train(cfg: TrainConfig) -> Path:
 
     trainer = build_trainer(cfg, model, tokenizer, train_ds)
 
-    tlog.on_train_start(dict(cfg.__dict__))
+    tlog.on_train_start(asdict(cfg))
     trainer.train()
 
     trainer.save_model(str(cfg.output_dir))
@@ -171,7 +171,7 @@ def train(cfg: TrainConfig) -> Path:
         metrics = trainer.state.log_history[-1] if trainer.state.log_history else None
     except Exception:
         metrics = None
-    tlog.on_train_end(output_dir=str(cfg.output_dir), metrics=metrics)
+    tlog.on_train_end(output_dir=str(cfg.output_dir), metrics=metrics if isinstance(metrics, dict) else None)
 
     return cfg.output_dir
 
@@ -198,6 +198,7 @@ def validate_train_config(cfg: TrainConfig) -> None:
     Raises:
         ValueError: If any configuration parameter is invalid.
     """
+    resolved = resolve_device(cfg.device)
     if cfg.batch_size < 1:
         raise ValueError("batch_size must be >= 1")
     if cfg.grad_accum_steps < 1:
@@ -212,7 +213,7 @@ def validate_train_config(cfg: TrainConfig) -> None:
         raise ValueError("output_dir must be set")
     if cfg.save_steps is None:
         raise ValueError("save_steps must be set")
-    if cfg.fp16 and cfg.device != "cuda":
+    if cfg.fp16 and resolved != "cuda":
         raise ValueError("fp16 requires CUDA device")
-    if cfg.bf16 and cfg.device != "cuda":
+    if cfg.bf16 and resolved != "cuda":
         raise ValueError("bf16 requires CUDA device")

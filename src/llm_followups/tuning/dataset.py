@@ -1,6 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass
-from typing import Iterable, Iterator, Literal, Sequence, Optional, Dict, List
+from typing import Literal, Sequence, Optional, Dict, List, Mapping
 from datasets import Dataset, DatasetDict, load_dataset
 from transformers import PreTrainedTokenizerBase
 
@@ -14,6 +14,7 @@ class DatasetConfig:
     seed: int | None = None
     num_proc: int | None = None
     format: Literal["raw_text", "chat_messages"] = "raw_text"
+    data_files: str | Sequence[str] | Mapping[str, str | Sequence[str]] | None = None
 
 def load_raw_dataset(cfg: DatasetConfig) -> Dataset:
     """
@@ -29,19 +30,23 @@ def load_raw_dataset(cfg: DatasetConfig) -> Dataset:
         ValueError: If source is empty or split not found.
         TypeError: If load_dataset returns unexpected type.
     """
-    if not cfg.source:
-        raise ValueError("cfg.source is empty")
-
-    loaded = load_dataset(cfg.source)
-
-    if isinstance(loaded, DatasetDict):
-        if cfg.split not in loaded.keys():
-            raise ValueError(f"Requested split '{cfg.split}' not in available splits: {list(loaded.keys())}")
-        ds = loaded[cfg.split]
-    elif isinstance(loaded, Dataset):
-        ds = loaded
+    # Load from local files if provided, otherwise load from HF hub/source
+    if cfg.data_files:
+        ds = load_dataset("json", data_files=cfg.data_files, split=cfg.split)
+        if not isinstance(ds, Dataset):
+            raise TypeError("Expected a Dataset when loading with 'split' and local data_files")
     else:
-        raise TypeError("Unexpected return from load_dataset: expected Dataset or DatasetDict")
+        if not cfg.source:
+            raise ValueError("Must set either cfg.source or cfg.data_files")
+        loaded = load_dataset(cfg.source)
+        if isinstance(loaded, DatasetDict):
+            if cfg.split not in loaded.keys():
+                raise ValueError(f"Requested split '{cfg.split}' not in available splits: {list(loaded.keys())}")
+            ds = loaded[cfg.split]
+        elif isinstance(loaded, Dataset):
+            ds = loaded
+        else:
+            raise TypeError("Unexpected return from load_dataset: expected Dataset or DatasetDict")
 
     if cfg.shuffle:
         seed = cfg.seed if cfg.seed is not None else 42
@@ -99,7 +104,7 @@ def prepare_training_text(ds: Dataset, *, text_field: str, format: Literal["raw_
             else:
                 raise ValueError("Missing text_field and no fallback fields found (instruction/output)")
 
-        ds = ds.map(map_fn, batched=True, remove_columns=[])
+        ds = ds.map(map_fn, batched=True)
         ds = ds.filter(lambda ex: bool(ex.get("text") and str(ex["text"]).strip()))
         return ds
 
@@ -128,7 +133,7 @@ def prepare_training_text(ds: Dataset, *, text_field: str, format: Literal["raw_
                 texts.append("\n".join(parts).strip())
             return {"text": texts}
 
-        ds = ds.map(map_chat, batched=True, remove_columns=[])
+        ds = ds.map(map_chat, batched=True)
         ds = ds.filter(lambda ex: bool(ex.get("text") and str(ex["text"]).strip()))
         return ds
 
