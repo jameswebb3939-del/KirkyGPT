@@ -120,17 +120,24 @@ def prepare_training_text(ds: Dataset, *, text_field: str, format: Literal["raw_
                 if not msgs or not isinstance(msgs, list):
                     texts.append("")
                     continue
-                parts: List[str] = []
+                # Find last user and last assistant message
+                last_user = None
+                last_assistant = None
                 for m in msgs:
                     if not isinstance(m, dict):
                         continue
                     role = m.get("role", "")
                     content = m.get("content", "")
                     content = "" if content is None else str(content).strip()
-                    if not content:
-                        continue
-                    parts.append(f"{role.capitalize()}: {content}")
-                texts.append("\n".join(parts).strip())
+                    if role == "user" and content:
+                        last_user = content
+                    elif role == "assistant" and content:
+                        last_assistant = content
+                # Compose template
+                user_part = last_user if last_user is not None else ""
+                assistant_part = last_assistant if last_assistant is not None else ""
+                txt = f"### User:\n{user_part}\n\n### Assistant:\n{assistant_part}"
+                texts.append(txt.strip())
             return {"text": texts}
 
         ds = ds.map(map_chat, batched=True)
