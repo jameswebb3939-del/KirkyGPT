@@ -12,15 +12,15 @@ class Settings:
     endpoint_chat: str = "/chat"
     endpoint_health: str = "/health"
     request_timeout_s: float = 30.0
-    max_new_tokens: int = 128
+    max_new_tokens: int = 64
     temperature: float = 0.2
     top_p: float = 0.9
-    seed: int | None=None
-    device: Literal["cpu", "auto"] = "cpu"
-    adapter_path: Path | None=None
+    seed: int | None = None
+    device: Literal["cpu", "auto"] = "auto"
+    adapter_path: Path | None = None
     enforce_format: bool = True
     min_questions: int = 3
-    bullet_style: Literal["dash", "asterisk", "either"] = "either"
+    bullet_style: Literal["dash", "asterisk", "either"] = "dash"
 
 def get_settings(env: Optional[dict[str, str]] = None) -> Settings:
     """
@@ -48,15 +48,18 @@ def get_settings(env: Optional[dict[str, str]] = None) -> Settings:
     endpoint_chat = get_env_var("ENDPOINT_CHAT", "/chat")
     endpoint_health = get_env_var("ENDPOINT_HEALTH", "/health")
     request_timeout_s = float(get_env_var("REQUEST_TIMEOUT_S", "30.0"))
-    max_new_tokens = int(get_env_var("MAX_NEW_TOKENS", "128"))
+    max_new_tokens = int(get_env_var("MAX_NEW_TOKENS", "64"))
     temperature = float(get_env_var("TEMPERATURE", "0.2"))
     top_p = float(get_env_var("TOP_P", "0.9"))
-    seed = int(get_env_var("SEED")) if get_env_var("SEED") else None
-    device = get_env_var("DEVICE", "cpu")
+    seed_raw = get_env_var("SEED")
+    seed = int(seed_raw) if seed_raw else None
+    device = get_env_var("DEVICE", "auto")
     adapter_path = Path(get_env_var("ADAPTER_PATH")) if get_env_var("ADAPTER_PATH") else None
     enforce_format = get_env_var("ENFORCE_FORMAT", "true").lower() in ("true", "1", "yes")
     min_questions = int(get_env_var("MIN_QUESTIONS", "3"))
-    bullet_style = get_env_var("BULLET_STYLE", "either")
+    bullet_style = get_env_var("BULLET_STYLE", "dash")
+    if bullet_style not in ("dash", "asterisk", "either"):
+        bullet_style = "dash"
     
     return Settings(
         model_name=model_name,

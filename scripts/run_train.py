@@ -14,24 +14,21 @@ def main() -> int:
 
     ds_cfg = DatasetConfig(
         format="chat_messages",
+        data_files=str(Path("data") / "sft_followups.jsonl"),
         split="train",
-        data_files=str(data_path),
         shuffle=True,
         seed=42,
         max_length=512,
     )
 
     cfg = TrainConfig(
-        # IMPORTANT: use a model you actually have access to locally or can download
-        # Examples: "gpt2", "distilgpt2"
         model_name="distilgpt2",
-        output_dir=Path("outputs/run1"),
+        output_dir=Path("outputs") / "run6",
         dataset=ds_cfg,
-        device="auto",
+        lr=2e-5,
         batch_size=2,
         grad_accum_steps=1,
-        lr=2e-5,
-        epochs=1.0,
+        max_steps=1200,
         save_steps=200,
         logging_steps=10,
     )

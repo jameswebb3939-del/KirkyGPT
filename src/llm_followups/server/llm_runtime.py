@@ -1,3 +1,4 @@
+
 from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Iterable, Literal, Sequence, Optional
@@ -18,6 +19,21 @@ from llm_followups.server.schemas import ChatMessage
 
 logger = logging.getLogger(__name__)
 
+def _take_bullets(text: str, k: int) -> str | None:
+    """
+    Extract up to k bullet lines (starting with - or *) from text.
+    Returns the joined bullet lines if any are found, else None.
+    """
+    bullets: list[str] = []
+    for ln in text.splitlines():
+        s = ln.strip()
+        if s.startswith("- ") or s.startswith("* "):
+            bullets.append(s)
+        if len(bullets) >= k:
+            break
+    if bullets:
+        return "\n".join(bullets[:k]).strip()
+    return None
 
 @dataclass(frozen=True)
 class GenerationRequest:
@@ -85,6 +101,7 @@ class LLMRuntime:
 
         # Tokenizer: ensure pad token exists
         tokenizer = AutoTokenizer.from_pretrained(self._settings.model_name, use_fast=True)
+        added_tokens = False
         if tokenizer.pad_token is None:
             # fallback to eos_token if pad not set
             if tokenizer.eos_token is not None:
@@ -92,14 +109,19 @@ class LLMRuntime:
             else:
                 # As a last resort, set pad token to '<pad>' and add to vocab if needed
                 tokenizer.add_special_tokens({"pad_token": "<pad>"})
+                added_tokens = True
         # After this, pad_token_id should be set
         if tokenizer.pad_token_id is None:
-            # convert eos token to id if possible
-            if tokenizer.eos_token is not None:
-                tokenizer.pad_token_id = tokenizer.convert_tokens_to_ids(tokenizer.eos_token)
+            tokenizer.pad_token = tokenizer.eos_token
+        # Final safety
+        assert tokenizer.pad_token_id is not None, "pad_token_id must be set"
+        assert tokenizer.eos_token_id is not None, "eos_token_id must be set"
 
         # Model: CPU-first approach; avoid float16 on CPU
         model = AutoModelForCausalLM.from_pretrained(self._settings.model_name)
+        # If special tokens were added, resize embeddings
+        if added_tokens:
+            model.resize_token_embeddings(len(tokenizer))
         model.to(torch_device)
         model.eval()
 
@@ -180,7 +202,8 @@ class LLMRuntime:
         )
 
         parts: list[str] = []
-        parts.append(sys_instruction)
+        # Wrap sys_instruction as System: ... to match training format
+        parts.append(f"System: {sys_instruction}")
 
         # Append conversation transcript, preserving order
         for message in messages:
@@ -194,9 +217,8 @@ class LLMRuntime:
                 # Unknown role — include generically
                 parts.append(f"{role.capitalize()}: {content}")
 
-        # Final assistant cue
-        parts.append("Assistant:")
-
+        # Final assistant cue: force bullet start
+        parts.append(f"Assistant:\n{bullet_char} ")
         return "\n\n".join(parts)
 
     def enforce_followup_format(self, text: str, *, prompt_summary: str | None = None) -> tuple[str, bool, bool]:
@@ -216,6 +238,12 @@ class LLMRuntime:
         # If format enforcement is disabled, return trimmed text and no flags
         if not self._settings.enforce_format:
             return (text.strip(), False, False)
+
+        # Truncate to first k bullets before validation (robust: use any bullets found)
+        k = self._settings.min_questions
+        trimmed = _take_bullets(text, k)
+        if trimmed is not None:
+            text = trimmed
 
         # Validate the raw text
         validation = validate_followup_list(
@@ -302,7 +330,7 @@ class LLMRuntime:
             RuntimeError: If model is not loaded.
         """
         if not self.is_loaded():
-            raise RuntimeError("Model not loaded")
+            await self.load()
 
         t0 = time.time()
 
@@ -333,6 +361,8 @@ class LLMRuntime:
                     temperature=req.temperature,
                     top_p=req.top_p,
                     do_sample=do_sample,
+                    repetition_penalty=1.10,
+                    no_repeat_ngram_size=3,
                     pad_token_id=self._tokenizer.pad_token_id,
                     eos_token_id=self._tokenizer.eos_token_id,
                 )
