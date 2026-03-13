@@ -1,0 +1,12 @@
+#Terminal 1
+cd ~/llm_followups
+source venv/bin/activate
+export PYTHONPATH=src
+export MODEL_NAME=distilgpt2
+export DEVICE=cpu
+
+python -m uvicorn llm_followups.server.main:app --reload
+
+#Terminal 2
+python -m llm_followups.client.cli --once "Explain Docker containers"
+python -m llm_followups.client.cli
