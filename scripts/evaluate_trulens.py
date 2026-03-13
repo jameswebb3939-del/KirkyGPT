@@ -1,18 +1,17 @@
 import argparse
 import json
 from pathlib import Path
-from typing import Sequence, Any, Optional
+from typing import Sequence, Optional, Any
 from dataclasses import dataclass, asdict
 import asyncio
 import statistics
 
-from src.llm_followups.utils.config import Settings
-from src.llm_followups.server.llm_runtime import LLMRuntime, GenerationRequest, GenerationResult
-from src.llm_followups.server.schemas import ChatMessage
+from llm_followups.utils.config import Settings
+from llm_followups.server.llm_runtime import LLMRuntime, GenerationResult
+from llm_followups.server.schemas import ChatMessage
 
+#SRC.LLM_FOLLOWUPS IS CORRECT - NOTE: DO NOT CHANGE THIS AS IT WILL BE INCORRECT OTHERWISE!!!!
 
-# TruLens imports
-from trulens.core import Feedback
 from trulens.providers.openai import OpenAI
 
 
@@ -80,26 +79,25 @@ async def generate_response(runtime: LLMRuntime, prompt: str) -> dict[str, str]:
     }
 
 
-def build_feedbacks(provider: OpenAI) -> dict[str, Feedback]:
-    # Relevance: prompt vs output
-    relevance = Feedback(provider.relevance).on_input_output()
-    # Correctness: output only
-    correctness = Feedback(provider.correctness).on_output()
-    # Groundedness: not applicable without context, so skip or set to None
+
+
+def build_feedbacks(provider: OpenAI) -> dict[str, Any]:
+    # Return provider methods directly for existing data evaluation
     return {
-        "relevance": relevance,
-        "correctness": correctness
-        # "groundedness": groundedness  # Only if you define a custom one
+        "relevance": provider.relevance_with_cot_reasons,
+        "correctness": provider.correctness_with_cot_reasons
     }
 
 
-async def evaluate_prompt(runtime: LLMRuntime, prompt: str, feedbacks: dict[str, Feedback]) -> EvaluationRow:
+
+
+async def evaluate_prompt(runtime: LLMRuntime, prompt: str, feedbacks: dict[str, Any]) -> EvaluationRow:
     resp = await generate_response(runtime, prompt)
     prompt = resp["prompt"]
     raw_output = resp["raw_output"]
     final_output = resp["final_output"]
 
-    # TruLens feedbacks expect (input, output) for on_input_output, output for on_output
+    # Call provider methods directly for existing data evaluation
     relevance_result = feedbacks["relevance"](prompt, final_output)
     correctness_result = feedbacks["correctness"](final_output)
 
@@ -111,11 +109,10 @@ async def evaluate_prompt(runtime: LLMRuntime, prompt: str, feedbacks: dict[str,
         relevance_reason=getattr(relevance_result, "reason", None),
         correctness_score=getattr(correctness_result, "score", None),
         correctness_reason=getattr(correctness_result, "reason", None)
-        # groundedness_score=None, groundedness_reason=None
     )
 
 
-async def evaluate_prompts(runtime: LLMRuntime, prompts: Sequence[str], feedbacks: dict[str, Feedback], verbose: bool = False) -> list[EvaluationRow]:
+async def evaluate_prompts(runtime: LLMRuntime, prompts: Sequence[str], feedbacks: dict[str, Any], verbose: bool = False) -> list[EvaluationRow]:
     results = []
     for idx, prompt in enumerate(prompts):
         row = await evaluate_prompt(runtime, prompt, feedbacks)
