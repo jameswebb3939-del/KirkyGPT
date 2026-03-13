@@ -42,7 +42,6 @@ def resolve_device(device: Literal["cpu", "cuda", "auto"]) -> str:
     Returns:
         Resolved device string ("cpu" or "cuda").
     """
-    
     if device == "cpu":
         return "cpu"
     elif device == ("cuda", "auto"):
