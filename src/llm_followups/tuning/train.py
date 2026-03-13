@@ -42,16 +42,12 @@ def resolve_device(device: Literal["cpu", "cuda", "auto"]) -> str:
     Returns:
         Resolved device string ("cpu" or "cuda").
     """
-
-    #REDUCE PROCESSING SPEED
+    
     if device == "cpu":
         return "cpu"
-    elif device == "cuda":
+    elif device == ("cuda", "auto"):
         return "cuda" if torch.cuda.is_available() else "cpu"
-    elif device == "auto":
-        return "cuda" if torch.cuda.is_available() else "cpu"
-    else:
-        return "cpu"
+    return "cpu"
     
 def load_model_and_tokenizer(model_name: str, *, device: str) -> tuple[AutoTokenizer, AutoModelForCausalLM]:
     """
