@@ -78,18 +78,12 @@ async def generate_response(runtime: LLMRuntime, prompt: str) -> dict[str, str]:
         "final_output": result.final_text
     }
 
-
-
-
 def build_feedbacks(provider: OpenAI) -> dict[str, Any]:
     # Return provider methods directly for existing data evaluation
     return {
         "relevance": provider.relevance_with_cot_reasons,
         "correctness": provider.correctness_with_cot_reasons
     }
-
-
-
 
 async def evaluate_prompt(runtime: LLMRuntime, prompt: str, feedbacks: dict[str, Any]) -> EvaluationRow:
     resp = await generate_response(runtime, prompt)

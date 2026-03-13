@@ -254,7 +254,6 @@ async def run_once(opts: CliOptions, message: str) -> int:
     return 0
 
 
-"""
 def main() -> int:
     opts = parse_cli_options()
     if opts.one_shot:
@@ -265,4 +264,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-"""
