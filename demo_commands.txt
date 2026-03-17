@@ -4,7 +4,7 @@ source venv/bin/activate
 export PYTHONPATH=src
 export MODEL_NAME=distilgpt2
 export DEVICE=cpu
-
+export OPENAI_API_KEY="[API key]" #Enter the API key here
 python -m uvicorn llm_followups.server.main:app --reload
 
 #Terminal 2
