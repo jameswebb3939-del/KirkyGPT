@@ -1,22 +1,59 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "llm-followups"
+version = "0.1.0"
+description = "Local LLM server and CLI client that generates follow-up questions."
+readme = "README.md"
+requires-python = ">=3.13"
+license = { text = "MIT" }
+
+authors = [
+  { name = "Shyam Popat" }
+]
+
+dependencies = [
+  "fastapi",
+  "uvicorn",
+  "httpx",
+  "pydantic",
+  "torch",
+  "transformers",
+  "datasets",
+  "numpy",
+  "tqdm",
+  "aiohttp",
+]
+
+[project.optional-dependencies]
+
+dev = [
+  "pytest",
+  "pytest-asyncio",
+  "black",
+  "ruff"
+]
+
+[project.scripts]
+llm-followups = "llm_followups.client.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
 [tool.pytest.ini_options]
 minversion = "8.0"
 testpaths = ["tests"]
-
-# Keep pytest's default test discovery rules explicit (prevents accidental misconfig)
 python_files = ["test_*.py", "*_test.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-
-# Make "src/" imports work (fixes: ModuleNotFoundError: No module named 'src')
 pythonpath = ["src"]
-
-# Useful defaults (NO -m filters here)
 addopts = "-ra -q"
-
-# If you use pytest-asyncio
 asyncio_mode = "strict"
-
-# Register custom markers so you don't get warnings
 markers = [
   "unit: unit tests",
   "integration: integration tests",

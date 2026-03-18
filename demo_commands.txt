@@ -2,11 +2,12 @@
 cd ~/llm_followups
 source venv/bin/activate
 export PYTHONPATH=src
-export MODEL_NAME=distilgpt2
+export MODEL_NAME=meta-llama/Llama-3.2-1B-Instruct
 export DEVICE=cpu
 export OPENAI_API_KEY="[API key]" #Enter the API key here
 python -m uvicorn llm_followups.server.main:app --reload
 
 #Terminal 2
+export PYTHONPATH=src
 python -m llm_followups.client.cli --once "Explain Docker containers"
 python -m llm_followups.client.cli

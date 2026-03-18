@@ -5,8 +5,103 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from src.llm_followups.server.schemas import ChatRequest
+
+from fastapi.testclient import TestClient
+from src.llm_followups.server.main import create_app
+from src.llm_followups.server.schemas import ChatMessage, ChatRequest
 from src.llm_followups.tuning.validate import validate_followup_list
+from src.llm_followups.utils.config import Settings
+
+class DummyResult:
+    def __init__(self, text: str) -> None:
+        self.raw_text = text
+        self.final_text = text
+        self.used_fallback = False
+        self.used_repair = False
+        self.latency_ms = 1
+
+
+class DummyRuntime:
+    def __init__(self, settings: Settings) -> None:
+        self._settings = settings
+
+    async def load(self) -> None:
+        return None
+
+    def is_loaded(self) -> bool:
+        return True
+
+    def model_name(self) -> str:
+        return self._settings.model_name
+
+    def device_str(self) -> str:
+        return "cpu"
+
+    def adapter_loaded(self) -> bool:
+        return False
+
+    def make_request(self, messages, max_new_tokens=None, temperature=None, top_p=None):
+        return {
+            "messages": messages,
+            "max_new_tokens": max_new_tokens,
+            "temperature": temperature,
+            "top_p": top_p,
+        }
+
+    async def generate(self, req):
+        text = (
+            "- What is your main goal with this setup?\n"
+            "- What constraints should I consider?\n"
+            "- What output format do you want?\n"
+        )
+        return DummyResult(text)
+
+
+def make_test_client() -> TestClient:
+    settings = Settings(
+        model_name="meta-llama/Llama-3.2-1B-Instruct",
+        device="cpu",
+    )
+    app = create_app(settings)
+    app.state.runtime = DummyRuntime(settings)
+    return TestClient(app)
+
+
+def test_health_endpoint() -> None:
+    client = make_test_client()
+    response = client.get("/health")
+    assert response.status_code == 200
+
+    body = response.json()
+    assert body["status"] == "ok"
+    assert body["model_loaded"] is True
+    assert body["model_name"] == "meta-llama/Llama-3.2-1B-Instruct"
+    assert body["device"] == "cpu"
+
+
+def test_chat_endpoint_returns_followup_bullets() -> None:
+    client = make_test_client()
+    response = client.post(
+        "/chat",
+        json={
+            "messages": [
+                {"role": "user", "content": "Help me deploy a model"}
+            ]
+        },
+    )
+    assert response.status_code == 200
+
+    body = response.json()
+    assert "response_text" in body
+
+    result = validate_followup_list(
+        text=body["response_text"],
+        min_questions=3,
+        bullet_style="either",
+        require_question_mark=True,
+        forbid_extra_text=True,
+    )
+    assert result.ok, result.errors
 
 
 def get_last_assistant_text(messages: list[dict[str, Any]]) -> str | None:

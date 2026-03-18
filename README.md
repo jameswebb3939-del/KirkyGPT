@@ -1,29 +1,12 @@
-# **llm_followups — Production-Ready Async LLM Backend with Validation, CLI & Training Pipeline**
+# **llm_followups — Local LLM Server + CLI (Follow-Up Questions Only)**
 
-A complete **Python 3.13+ asynchronous LLM backend application** built using:
+A complete **Python 3.13.9** project that:
 
-* FastAPI
-* Pydantic v2
-* Async HTTP client
-* HuggingFace Transformers
-* Structured validation pipeline
-* Custom follow-up question formatting enforcement
-* CLI client
-* Training + dataset pipeline
-* Full pytest test suite
-
-This project demonstrates:
-
-* Clean layered architecture (`server/`, `tuning/`, `utils/`)
-* Strict schema validation via Pydantic
-* Custom output validation logic (`validate_followup_list`)
-* Repair + fallback logic for malformed model outputs
-* Async runtime with streaming support
-* Dataset preprocessing + tokenization pipeline
-* Training loop with HuggingFace Trainer
-* Structured logging
-* CLI validation tool for SFT JSONL
-* Fully working pytest suite
+* Runs a **local LLM server** using Hugging Face Transformers
+* Provides a **CLI chat client**
+* Fine-tunes a model to return **only follow-up questions**
+* Includes a **dataset + training pipeline**
+* Includes **end-to-end pytest tests**
 
 Completed as part of the **Elemental Concept Python Developer Internship Training Program — Program 5**.
 
@@ -35,40 +18,44 @@ This project enforces a strict rule:
 
 > The assistant must return only follow-up questions in bullet format.
 
-Example required format:
+Example required output:
 
 ```
 - What environment are you deploying this to?
-- Do you need GPU acceleration?
-- Should responses be streamed or returned in full?
+- What constraints should be considered for this setup?
+- What output format do you expect from the system?
 ```
 
-The backend:
+The system:
 
-* Generates responses
-* Validates output format
-* Attempts repair if malformed
-* Falls back safely if validation fails
-* Logs validation results
+* Generates responses using a local LLM
+* Validates formatting strictly
+* Attempts repair if invalid
+* Falls back safely if needed
 
-This mimics real-world production LLM guardrails.
+---
+
+## **Default Model**
+
+```
+meta-llama/Llama-3.2-1B-Instruct
+```
 
 ---
 
 ## **Features**
 
-| Category   | Description                            |
-| ---------- | -------------------------------------- |
-| Backend    | FastAPI async API server               |
-| Runtime    | Async LLM generation with Transformers |
-| Validation | Custom bullet-list follow-up validator |
-| Repair     | Auto-repair malformed outputs          |
-| Fallback   | Safe fallback question generator       |
-| CLI        | Interactive chat client                |
-| Dataset    | JSONL SFT format validation            |
-| Training   | Tokenization + Trainer pipeline        |
-| Logging    | Structured JSON or plain logging       |
-| Testing    | pytest + schema + output tests         |
+| Category   | Description                      |
+| ---------- | -------------------------------- |
+| Backend    | FastAPI async API server         |
+| CLI        | Interactive chat client          |
+| LLM        | HuggingFace Transformers         |
+| Validation | Strict bullet-format enforcement |
+| Repair     | Auto-fix malformed outputs       |
+| Fallback   | Safe fallback questions          |
+| Dataset    | JSONL SFT dataset generation     |
+| Training   | HuggingFace Trainer pipeline     |
+| Testing    | pytest + API tests               |
 
 ---
 
@@ -89,6 +76,9 @@ llm_followups/
 │       │   ├── schemas.py
 │       │   └── llm_runtime.py
 │       │
+│       ├── client/
+│       │   └── cli.py
+│       │
 │       ├── tuning/
 │       │   ├── dataset.py
 │       │   ├── train.py
@@ -103,104 +93,70 @@ llm_followups/
 │   └── test_chat_format.py
 │
 └── scripts/
-    └── validate_jsonl.py
+    ├── make_sft.py
+    └── run_train.py
 ```
 
 ---
 
-## **Architecture Overview**
+## **Setup**
 
-### Server Layer
-
-* `schemas.py` — Pydantic request/response models
-* `llm_runtime.py` — Model loading + generation + repair logic
-* `main.py` — FastAPI app
-
-Handles:
-
-* `/chat`
-* `/health`
-
----
-
-### Validation Layer
-
-`validate_followup_list()` enforces:
-
-* Minimum number of questions
-* Bullet style (`-` or `*`)
-* No numbered lists
-* No extra prose
-* Question marks required
-
-Returns:
+### Python version
 
 ```
-ValidationResult(
-    ok: bool,
-    num_items: int,
-    errors: list[str]
-)
+Python 3.13.9
 ```
 
----
+### Create virtual environment
 
-### Repair Logic
+#### Windows (PowerShell)
 
-If validation fails:
-
-1. Attempt structured repair
-2. Re-validate
-3. If still invalid → fallback questions
-
-Ensures production safety.
-
----
-
-### Dataset + Training Pipeline
-
-Includes:
-
-* `DatasetConfig`
-* Text normalization
-* Tokenization
-* Length statistics
-* HuggingFace `Trainer`
-* TrainConfig validation
-
-Supports SFT-style JSONL training data.
-
----
-
-### JSONL Validator CLI
-
-```
-python scripts/validate_jsonl.py data/sft_followups.jsonl
+```powershell
+py -3.13 -m venv venv
+venv\Scripts\Activate.ps1
 ```
 
-Checks:
+#### Windows (cmd)
 
-* Valid JSON
-* Schema correctness
-* Proper bullet formatting
-* No numbered lists
-* Minimum questions
+```cmd
+py -3.13 -m venv venv
+venv\Scripts\activate.bat
+```
+
+#### macOS / Linux
+
+```bash
+python3.13 -m venv venv
+source venv/bin/activate
+```
+
+### Install dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+### Freeze dependencies
+
+```bash
+pip freeze > requirements.txt
+```
 
 ---
 
 ## **Running the Server**
 
 ```bash
-uvicorn llm_followups.server.main:app --reload
+python -m uvicorn llm_followups.server.main:app --reload
 ```
 
-Health check:
+### Health check
 
 ```
 GET /health
 ```
 
-Chat request:
+### Chat request
 
 ```json
 {
@@ -212,82 +168,71 @@ Chat request:
 
 ---
 
-## **Running the CLI Client**
+## **Running the CLI**
 
 ```bash
-python -m llm_followups.cli
+python -m llm_followups.client.cli
 ```
 
-Interactive chat session with:
+Optional:
 
-* `:reset`
-* `:history`
-* `:quit`
+```bash
+python -m llm_followups.client.cli --once "Explain Docker containers"
+```
 
 ---
 
-## **Running Tests**
+## **Generate Dataset**
+
+```bash
+PYTHONPATH=src python scripts/make_sft.py --out data/sft_followups.jsonl --n 300 --seed 42
+```
+
+---
+
+## **Run Training**
+
+```bash
+PYTHONPATH=src python scripts/run_train.py
+```
+
+---
+
+## **Run Tests**
 
 ```bash
 pytest -v
 ```
 
-Example:
+Tests include:
 
-```
-collected 5 items
-5 passed in 0.11s
-```
-
-Tests validate:
-
-* JSONL correctness
-* ChatRequest schema
-* Assistant bullet formatting
-* No numbered lists
-* Min question count enforced
+* API `/health` endpoint
+* API `/chat` endpoint
+* Follow-up question format validation
+* JSONL dataset structure
 
 ---
 
 ## **Tech Stack**
 
-* Python 3.13+
+* Python 3.13.9
 * FastAPI
 * Pydantic v2
 * HuggingFace Transformers
 * PyTorch
 * pytest + pytest-asyncio
-* Structured logging
-* Async HTTP (httpx)
-* Black / Ruff
+* httpx
 
 ---
 
-## **Production Concepts Demonstrated**
+## **Key Concepts Demonstrated**
 
-* Guardrail enforcement
-* Output validation
-* Automatic repair loops
-* Deterministic fallback
-* Clean async architecture
-* Schema-first design
+* LLM guardrails and validation
+* Structured output enforcement
+* Repair + fallback mechanisms
+* Async API design
 * CLI + API integration
-* Training + inference in same codebase
-
----
-
-## **Outcome**
-
-This project demonstrates:
-
-* Production-safe LLM backend patterns
-* Strict output format enforcement
-* Clean modular architecture
-* Full test coverage for data correctness
-* CLI + API integration
-* Training + inference workflow
-
-A significant progression from Program 4 — moving from database architecture to **LLM production architecture**.
+* Dataset + fine-tuning workflow
 
 ---
 

@@ -22,7 +22,7 @@ def main() -> int:
     )
 
     cfg = TrainConfig(
-        model_name="distilgpt2",
+        model_name="meta-llama/Llama-3.2-1B-Instruct",
         output_dir=Path("outputs") / "run6",
         dataset=ds_cfg,
         lr=2e-5,

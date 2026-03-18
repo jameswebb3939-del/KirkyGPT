@@ -50,7 +50,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         """
         logger.info("Loading LLM runtime...")
         try:
-            await runtime.load()
+            await app.state.runtime.load()
             logger.info("LLM runtime loaded successfully")
         except Exception as e:
             logger.error(f"Failed to load LLM runtime: {e}")
@@ -64,6 +64,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         Returns:
             HealthResponse with model status and device info.
         """
+        runtime = app.state.runtime
         return HealthResponse(
             status="ok",
             model_loaded=runtime.is_loaded(),
@@ -87,6 +88,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             HTTPException: 503 if model not loaded, 400 if request invalid.
         """
         # Check if model is loaded
+        runtime = app.state.runtime
         if not runtime.is_loaded():
             raise HTTPException(
                 status_code=503,
