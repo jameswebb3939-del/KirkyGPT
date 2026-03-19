@@ -185,48 +185,38 @@ def fallback_followups(prompt_summary: str | None = None, *, min_questions: int 
     Returns:
         String with one bullet per line, guaranteed valid format.
     """
-    # Step 1: Choose bullet prefix
     prefix = "*" if bullet_style == "asterisk" else "-"
 
-    # Step 2: Build optional topic hint
-    topic_hint: str | None = None
-    if prompt_summary:
-        prompt_summary = prompt_summary.strip()
-        if prompt_summary:
-            # Extract first ~8-12 words as hint
-            words = prompt_summary.split()[:10]
-            topic_hint = " ".join(words)
-
-    # Step 3: Prepare template libraries
     templates = [
-        "What outcome do you want?",
-        "What constraints or requirements should I follow?",
-        "What inputs or examples can you share?",
-        "What edge cases should be handled?",
-        "What should the response format look like?",
-        "What should I do first?",
+        "What specific goal are you trying to achieve?",
+        "What constraints or requirements should I consider?",
+        "What would a successful result look like?",
+        "What tools, technologies, or resources are you already using?",
+        "What is the biggest difficulty you are facing right now?",
+        "Are there any examples or references you want me to follow?",
     ]
 
-    topic_templates = []
-    if topic_hint:
-        topic_templates = [
-            f"What is the main goal for {topic_hint}?",
-            f"What constraints apply to {topic_hint}?",
-            f"What examples can you provide for {topic_hint}?",
-        ]
+    topic_templates: list[str] = []
+    if prompt_summary:
+        topic_hint = " ".join(prompt_summary.strip().split()[:12])
+        if topic_hint:
+            topic_templates = [
+                f"What part of '{topic_hint}' do you want to focus on first?",
+                f"What constraints or requirements matter most for '{topic_hint}'?",
+                f"What result are you hoping to achieve with '{topic_hint}'?",
+                f"What tools, examples, or prior work do you already have for '{topic_hint}'?",
+            ]
 
-    # Step 4: Select questions to meet min_questions
     questions: list[str] = []
     seen: set[str] = set()
 
-    # Add topic-specific templates first (if available)
-    if topic_templates:
-        for q in topic_templates[:2]:
-            if q not in seen:
-                questions.append(q)
-                seen.add(q)
+    for q in topic_templates:
+        if q not in seen:
+            questions.append(q)
+            seen.add(q)
+        if len(questions) >= min_questions:
+            break
 
-    # Fill remaining from generic templates
     template_idx = 0
     while len(questions) < min_questions:
         q = templates[template_idx % len(templates)]
@@ -235,24 +225,15 @@ def fallback_followups(prompt_summary: str | None = None, *, min_questions: int 
             seen.add(q)
         template_idx += 1
 
-    # Step 5: Enforce strict validity on each question
-    clean_questions: list[str] = []
+    clean_questions = []
     for q in questions:
-        q = q.strip()
-        # Replace internal newlines with spaces
-        q = q.replace("\n", " ")
-        # Ensure ends with ?
+        q = q.strip().replace("\n", " ")
+        q = q.replace("??", "?")
         if not q.endswith("?"):
             q += "?"
         clean_questions.append(q)
 
-    # Step 6: Emit bullet list
-    lines = [f"{prefix} {q}" for q in clean_questions]
-    output_text = "\n".join(lines)
-
-    # Step 7: Final checks and return
-    output_text = output_text.strip()
-    return output_text
+    return "\n".join(f"{prefix} {q}" for q in clean_questions)
 
 def accepted_markers_for_style(bullet_style: Literal["dash","asterisk","either"]) -> set[str]:
     if bullet_style == "dash":
@@ -282,6 +263,7 @@ def parse_bullet_line(line: str) -> tuple[str | None, str]:
 def normalize_item_text(item: str):
     s = item.strip()
     s = " ".join(s.split())
+    s = s.replace("??", "?")
     return s
 
 def validate_item(item: str, *, require_question_mark: bool = True) -> list[str]:

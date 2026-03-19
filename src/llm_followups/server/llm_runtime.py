@@ -193,12 +193,16 @@ class LLMRuntime:
             bullet_char = "-"
 
         sys_instruction = (
-            f"Return at least {self._settings.min_questions} follow-up questions."
-            " Output ONLY a bullet list using the following rules:\n"
+            f"Return at least {self._settings.min_questions} follow-up questions.\n"
+            "Output ONLY a bullet list using the following rules:\n"
             f"- Use '{bullet_char}' as the bullet marker on each line.\n"
             "- Do not include any prose before or after the bullet list.\n"
             "- Each bullet must be a question and end with a question mark ('?').\n"
-            "- Do not include numbering or extra commentary."
+            "- Do not include numbering or extra commentary.\n"
+            "- Each question must be specific to the user's input.\n"
+            "- Avoid generic templates like 'What is the main goal' or repeating the same structure.\n"
+            "- Use varied phrasing across questions.\n"
+            "- Ask concrete, context-aware follow-up questions."
         )
 
         parts: list[str] = []

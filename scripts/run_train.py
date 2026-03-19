@@ -26,11 +26,11 @@ def main() -> int:
         output_dir=Path("outputs") / "llama1",
         dataset=ds_cfg,
         lr=2e-5,
-        batch_size=2,
+        batch_size=1,
         grad_accum_steps=1,
-        max_steps=1200,
-        save_steps=200,
-        logging_steps=10,
+        max_steps=5,
+        save_steps=1,
+        logging_steps=1,
     )
 
     out = train(cfg)
