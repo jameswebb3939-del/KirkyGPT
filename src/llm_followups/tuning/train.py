@@ -122,7 +122,7 @@ def build_trainer(cfg: TrainConfig, model, tokenizer, train_ds) -> Trainer:
         model=model,
         args=training_args,
         train_dataset=train_ds,
-        tokenizer=tokenizer,
+        processing_class=tokenizer,
         data_collator=collator
     )
     return trainer
