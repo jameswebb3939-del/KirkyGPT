@@ -23,7 +23,7 @@ def main() -> int:
 
     cfg = TrainConfig(
         model_name="meta-llama/Llama-3.2-1B-Instruct",
-        output_dir=Path("outputs") / "run6",
+        output_dir=Path("outputs") / "llama1",
         dataset=ds_cfg,
         lr=2e-5,
         batch_size=2,
