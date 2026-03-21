@@ -4,7 +4,13 @@ source venv/bin/activate
 export PYTHONPATH=src
 export MODEL_NAME=meta-llama/Llama-3.2-1B-Instruct
 export DEVICE=cpu
-export OPENAI_API_KEY="[API key]" #Enter the API key here
+
+[Login into huggingface cli
+hf auth login
+hf auth whoami
+hf auth logout #when finished
+]
+
 python -m uvicorn llm_followups.server.main:app --reload
 
 #Terminal 2

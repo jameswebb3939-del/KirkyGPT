@@ -75,6 +75,12 @@ PROMPT_TEMPLATES: list[str] = [
     "Generate {k} questions you would ask before starting work on {topic}.",
     "Write {k} follow-up questions to gather requirements for {topic}.",
     "What are {k} follow-up questions you would ask about {topic}?",
+    "Before helping with {topic}, ask me {k} useful clarifying questions.",
+    "Ask {k} tailored questions that would help you give better advice about {topic}.",
+    "Generate {k} specific follow-up questions about {topic}, not generic ones.",
+    "Ask {k} concrete questions that would clarify my exact needs for {topic}.",
+    "Before answering, ask {k} questions that would make your help on {topic} more precise.",
+    "Write {k} varied follow-up questions that are specific to {topic}.",
 ]
 
 QUESTION_BANK: dict[str, list[str]] = {
@@ -87,6 +93,70 @@ QUESTION_BANK: dict[str, list[str]] = {
         "What does the expected output look like, and what is the actual output now?",
         "Are there any non-negotiables (format, style, performance, or compatibility)?",
     ],
+    
+    # FastAPI
+    "fastapi": [
+        "Are you designing a new FastAPI service or modifying an existing one?",
+        "Do you need help with routing, request validation, dependency injection, or response models?",
+        "Are you working with synchronous endpoints, async endpoints, or a mix of both?",
+        "Do you want help structuring the API, handling errors, or testing endpoints?",
+        "Is your main goal local development, production deployment, or both?",
+    ],
+    
+    # Flask
+    "flask": [
+        "Are you building a simple Flask app, a larger multi-file project, or an API service?",
+        "Do you need help with routes, templates, forms, or application structure?",
+        "Are you running Flask locally, in Docker, or with multiple services?",
+        "Do you want help debugging a Flask issue or setting up the project from scratch?",
+        "Are you using Flask mainly for learning, prototyping, or a real project?",
+    ],
+    
+    # SQLAlchemy
+    "sqlalchemy": [
+        "Are you using SQLAlchemy with sync sessions or async sessions?",
+        "Do you need help with models, relationships, queries, or session management?",
+        "Are you trying to structure a repository pattern, unit-of-work pattern, or both?",
+        "Is the issue related to database setup, querying, transactions, or testing?",
+        "What database backend are you using with SQLAlchemy?",
+    ],
+    
+    # Redis
+    "redis": [
+        "Are you using Redis for caching, session storage, queues, or something else?",
+        "Do you need help connecting to Redis, designing keys, or handling expiry correctly?",
+        "Are you working with Redis locally, in Docker, or through another service?",
+        "Is your issue about storing data, retrieving data, or debugging connection problems?",
+        "Do you want a simple example or help integrating Redis into an existing app?",
+    ],
+
+    # S3    
+    "s3": [
+        "Are you working with S3 for uploads, downloads, bucket setup, or access control?",
+        "Do you need help using boto3, handling object paths, or managing credentials?",
+        "Are you using real AWS S3 or a local emulator like LocalStack?",
+        "Is your main issue authentication, bucket configuration, or file handling?",
+        "Do you want help with a script, an app integration, or testing S3 locally?",
+    ],
+    
+    # DynamoDB
+    "dynamodb": [
+        "Are you designing a new DynamoDB table or working with an existing one?",
+        "Do you need help with partition keys, sort keys, or item access patterns?",
+        "Are you using DynamoDB locally through LocalStack or against AWS directly?",
+        "Is the challenge about table design, CRUD operations, or boto3 integration?",
+        "Do you want help with a small example or with integrating DynamoDB into an app?",
+    ],
+    
+    # Localstack
+    "localstack": [
+        "Which AWS service are you using through LocalStack right now?",
+        "Are you trying to start LocalStack, connect an app to it, or debug a service issue?",
+        "Do you need help with Docker Compose setup, endpoint configuration, or test data seeding?",
+        "Is the issue specific to S3, DynamoDB, or another LocalStack-backed service?",
+        "Are you aiming for local development only or for tests that mimic AWS behaviour more closely?",
+    ],
+
     # Python learning
     "python": [
         "What is your current Python level, and what topics do you find hardest right now?",
@@ -95,6 +165,7 @@ QUESTION_BANK: dict[str, list[str]] = {
         "Which concepts are you focusing on next (functions, OOP, typing, async, testing)?",
         "What is one small project you want to build to practise this topic?",
     ],
+    
     # Testing / pytest
     "pytest": [
         "Which test file and test function is failing, and what is the full error output?",
@@ -103,6 +174,16 @@ QUESTION_BANK: dict[str, list[str]] = {
         "Do you rely on marks (unit/integration), and are those marks registered?",
         "Is the failure deterministic, or does it depend on ordering or environment variables?",
     ],
+    
+    # Docker
+    "docker": [
+        "Are you trying to use Docker for local development, deployment, or both?",
+        "Do you need help writing a Dockerfile, running containers, or using Docker Compose?",
+        "What kind of application are you planning to run inside Docker?",
+        "Are you working on Linux, macOS, or Windows?",
+        "Do you want to understand Docker images, containers, volumes, or networking first?",
+    ],
+    
     # README / docs
     "readme": [
         "Who is the target audience for this README (recruiters, teammates, or users)?",
@@ -111,6 +192,7 @@ QUESTION_BANK: dict[str, list[str]] = {
         "What is the project structure and which entry points should a reader start with?",
         "What examples should be included to demonstrate expected inputs and outputs?",
     ],
+    
     # pyproject
     "pyproject": [
         "What is the package name and the import path under src/ (module name)?",
@@ -119,6 +201,7 @@ QUESTION_BANK: dict[str, list[str]] = {
         "Do you want console scripts (CLI entry points), and what command name should they use?",
         "Do you want strict typing checks and Ruff rules, or keep it minimal for now?",
     ],
+    
     # Training / SFT
     "sft": [
         "What exact output format must the assistant follow (bullets only, min questions, question marks)?",
@@ -134,6 +217,70 @@ QUESTION_BANK: dict[str, list[str]] = {
 # Helpers
 # ----------------------------
 
+GENERIC_STARTERS: tuple[str, ...] = (
+    "what is",
+    "what are",
+    "what have",
+    "what does",
+    "can you",
+    "are there",
+)
+
+TOPIC_KEYWORDS: dict[str, list[str]] = {
+    "docker": ["docker", "dockerfile", "container", "compose", "image"],
+    "fastapi": ["fastapi", "api", "endpoint", "request", "response"],
+    "flask": ["flask", "app", "route", "request"],
+    "sqlalchemy": ["sqlalchemy", "session", "model", "query", "database"],
+    "redis": ["redis", "cache", "session", "key"],
+    "s3": ["s3", "bucket", "object", "upload", "download"],
+    "dynamodb": ["dynamodb", "table", "item", "partition key"],
+    "localstack": ["localstack", "aws", "service", "endpoint"],
+    "pytest": ["pytest", "test", "fixture", "assert"],
+    "readme": ["readme", "project", "quickstart", "documentation"],
+    "pyproject": ["pyproject", "package", "dependency", "build"],
+    "pydantic": ["pydantic", "schema", "validation", "model"],
+    "async": ["async", "await", "concurrency", "event loop"],
+    "cli": ["cli", "command", "argument", "terminal"],
+    "python": ["python", "script", "function", "project"],
+    "sft": ["dataset", "training", "sft", "jsonl", "fine-tuning"],
+}
+
+
+def _topic_keywords(topic: str) -> list[str]:
+    t = topic.lower()
+    found: list[str] = []
+    for key, words in TOPIC_KEYWORDS.items():
+        if key in t:
+            found.extend(words)
+    if found:
+        seen = set()
+        out: list[str] = []
+        for word in found:
+            if word not in seen:
+                seen.add(word)
+                out.append(word)
+        return out
+
+    tokens = [tok.strip(" ,./()-").lower() for tok in topic.split()]
+    return [tok for tok in tokens if len(tok) > 3][:4]
+
+
+def _question_stem(text: str) -> str:
+    q = text.strip().lower()
+    q = q[:-1] if q.endswith("?") else q
+    words = q.split()
+    return " ".join(words[:3])
+
+
+def _starts_generic(text: str) -> bool:
+    q = text.strip().lower()
+    return q.startswith(GENERIC_STARTERS)
+
+
+def _mentions_topic_keyword(text: str, topic: str) -> bool:
+    q = text.lower()
+    return any(word in q for word in _topic_keywords(topic))
+
 def _read_topics_file(path: Path) -> list[str]:
     topics: list[str] = []
     for raw in path.read_text(encoding="utf-8").splitlines():
@@ -144,30 +291,58 @@ def _read_topics_file(path: Path) -> list[str]:
     return topics
 
 
-def _choose_question_pool(topic: str) -> list[str]:
+def _choose_question_pool(topic: str) -> tuple[list[str], list[str]]:
     t = topic.lower()
-    pools: list[list[str]] = [QUESTION_BANK["generic"]]
+    specific_pools: list[list[str]] = []
+    generic_pool: list[str] = QUESTION_BANK["generic"][:]
+    if "docker" in t or "compose" in t or "container" in t:
+        specific_pools.append(QUESTION_BANK["docker"])
+
+    if "fastapi" in t or "rest api" in t or "api" in t:
+        specific_pools.append(QUESTION_BANK["fastapi"])
+
+    if "flask" in t:
+        specific_pools.append(QUESTION_BANK["flask"])
+
+    if "sqlalchemy" in t or "unit-of-work" in t or "repository" in t or "database" in t:
+        specific_pools.append(QUESTION_BANK["sqlalchemy"])
+
+    if "redis" in t:
+        specific_pools.append(QUESTION_BANK["redis"])
+
+    if "s3" in t or "boto3" in t or "bucket" in t:
+        specific_pools.append(QUESTION_BANK["s3"])
+
+    if "dynamodb" in t:
+        specific_pools.append(QUESTION_BANK["dynamodb"])
+
+    if "localstack" in t:
+        specific_pools.append(QUESTION_BANK["localstack"])
 
     if "pytest" in t or "test" in t:
-        pools.append(QUESTION_BANK["pytest"])
-    if "readme" in t or "documentation" in t or "github" in t:
-        pools.append(QUESTION_BANK["readme"])
-    if "pyproject" in t or "toml" in t or "packag" in t:
-        pools.append(QUESTION_BANK["pyproject"])
-    if "sft" in t or "jsonl" in t or "fine-tun" in t or "tuning" in t or "train" in t:
-        pools.append(QUESTION_BANK["sft"])
-    if "python" in t:
-        pools.append(QUESTION_BANK["python"])
+        specific_pools.append(QUESTION_BANK["pytest"])
 
-    # Flatten unique while preserving order
-    seen = set()
-    flat: list[str] = []
-    for pool in pools:
+    if "readme" in t or "documentation" in t or "github" in t:
+        specific_pools.append(QUESTION_BANK["readme"])
+
+    if "pyproject" in t or "toml" in t or "packag" in t:
+        specific_pools.append(QUESTION_BANK["pyproject"])
+
+    if "sft" in t or "jsonl" in t or "fine-tun" in t or "tuning" in t or "train" in t:
+        specific_pools.append(QUESTION_BANK["sft"])
+
+    if "python" in t:
+        specific_pools.append(QUESTION_BANK["python"])
+
+    seen_specific = set()
+    specific: list[str] = []
+    for pool in specific_pools:
         for q in pool:
-            if q not in seen:
-                seen.add(q)
-                flat.append(q)
-    return flat
+            if q not in seen_specific:
+                seen_specific.add(q)
+                specific.append(q)
+
+    return specific, generic_pool
 
 
 def _is_valid_bullet_line(line: str, *, min_chars: int) -> bool:
@@ -207,47 +382,115 @@ def _ensure_question_marks(questions: Sequence[str]) -> list[str]:
 
 
 def _generate_questions(rng: random.Random, topic: str, k: int, *, min_chars: int) -> list[str]:
-    pool = _choose_question_pool(topic)
-    # Shuffle-copy
-    candidates = pool[:]
-    rng.shuffle(candidates)
+    specific_pool, generic_pool = _choose_question_pool(topic)
+
+    specific_candidates = specific_pool[:]
+    generic_candidates = generic_pool[:]
+    rng.shuffle(specific_candidates)
+    rng.shuffle(generic_candidates)
 
     picked: list[str] = []
-    for q in candidates:
+    used_stems: set[str] = set()
+    generic_used = 0
+
+    def try_add(question: str) -> bool:
+        nonlocal generic_used
+
+        q = question.strip()
+        if "this" in q and rng.random() < 0.35:
+            q = q.replace("this", topic)
+
+        q = _ensure_question_marks([q])[0]
+        stem = _question_stem(q)
+
+        if stem in used_stems:
+            return False
+
+        core = q[:-1].strip()
+        if len(core) < min_chars:
+            return False
+
+        if _starts_generic(q) and generic_used >= 1:
+            return False
+
+        if _starts_generic(q):
+            generic_used += 1
+
+        used_stems.add(stem)
+        picked.append(q)
+        return True
+
+    min_specific = min(2, k) if specific_candidates else 0
+
+    for q in specific_candidates:
+        if len(picked) >= min_specific:
+            break
+        try_add(q)
+
+    mixed_candidates = specific_candidates + generic_candidates
+    rng.shuffle(mixed_candidates)
+
+    for q in mixed_candidates:
         if len(picked) >= k:
             break
-        # Minor topic injection: occasionally customise a generic question
-        if "this" in q and rng.random() < 0.35:
-            q2 = q.replace("this", topic)
-        else:
-            q2 = q
-        picked.append(q2)
+        try_add(q)
 
-    # If pool smaller than k (unlikely), fill with safe generics
     while len(picked) < k:
-        picked.append(rng.choice(QUESTION_BANK["generic"]))
+        keywords = _topic_keywords(topic)
+        if len(picked) == 0 and keywords:
+            fallback = f"Are you working with {keywords[0]} for learning, debugging, or building something specific?"
+        elif len(picked) == 1 and len(keywords) >= 2:
+            fallback = f"Do you need help with {keywords[0]}, {keywords[1]}, or the overall workflow for {topic}?"
+        elif len(picked) == 2:
+            fallback = f"What specific outcome are you trying to achieve with {topic}?"
+        else:
+            fallback = rng.choice(generic_pool)
+
+        added = try_add(fallback)
+        if not added:
+            alt = f"What part of {topic} is most important for you right now?"
+            if not try_add(alt):
+                picked.append(_ensure_question_marks([alt])[0])
+                break
+
+    if not any(_mentions_topic_keyword(q, topic) for q in picked):
+        keywords = _topic_keywords(topic)
+        if keywords:
+            picked[0] = f"Are you mainly focused on {keywords[0]} in the context of {topic}?"
 
     picked = _ensure_question_marks(picked)
 
-    # Validate and, if needed, repair by swapping in longer generics
     repaired: list[str] = []
+    used_repaired_stems: set[str] = set()
+    generic_used_repaired = 0
+
     for q in picked:
-        # Ensure minimum length
         core = q[:-1].strip() if q.endswith("?") else q.strip()
         if len(core) < min_chars:
-            # Replace with a longer generic that passes min_chars
-            replacement = None
-            for cand in QUESTION_BANK["generic"]:
-                cand_q = _ensure_question_marks([cand])[0]
-                cand_core = cand_q[:-1].strip()
-                if len(cand_core) >= min_chars:
-                    replacement = cand_q
-                    break
-            q = replacement or (core + " (please share more details)?")
-        repaired.append(q)
+            q = f"What specific outcome are you trying to achieve with {topic}?"
 
-    return repaired
+        stem = _question_stem(q)
+        if stem in used_repaired_stems:
+            continue
 
+        if _starts_generic(q):
+            if generic_used_repaired >= 1:
+                continue
+            generic_used_repaired += 1
+
+        used_repaired_stems.add(stem)
+        repaired.append(_ensure_question_marks([q])[0])
+
+    while len(repaired) < k:
+        filler = f"What part of {topic} do you want to clarify first?"
+        stem = _question_stem(filler)
+        if stem not in used_repaired_stems:
+            used_repaired_stems.add(stem)
+            repaired.append(_ensure_question_marks([filler])[0])
+        else:
+            repaired.append(_ensure_question_marks([f"What specific constraint matters most for {topic}?"])[0])
+
+    return repaired[:k]
 
 @dataclass(frozen=True)
 class RowConfig:
