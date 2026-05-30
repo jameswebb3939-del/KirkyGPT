@@ -4,18 +4,19 @@ from dataclasses import dataclass
 from pathlib import Path
 import json
 import csv
-import time
-from typing import Literal, Sequence, Any
+import os
+from typing import Sequence, Any
 
 from llm_followups.utils.config import Settings, get_settings
-from llm_followups.tuning.validate import ValidationResult, validate_followup_list
+from llm_followups.tuning.validate import validate_followup_list
 from llm_followups.server.schemas import ChatMessage
 from llm_followups.server.llm_runtime import LLMRuntime
 
-import pandas
-from typer import prompt
+import pandas as pd
+import json
+from dataclasses import asdict
 import mlflow
-from trulens import TruLensCoherenceScorer, TruLensAnswerRelevanceScorer
+from mlflow.genai.scorers.trulens import Coherence, AnswerRelevance
 
 
 @dataclass(frozen=True)
@@ -57,23 +58,43 @@ class BatchEvalResult:
     trulens_scores: dict[str, float | str | None]
 
 def load_eval_examples(path: Path, limit: int | None = None) -> list[EvalExample]:
-    with open(path) as json_file:
-        j = json.load(json_file)
-        examples = []
-        for row in j:
-            if "user_message" in row:
+    examples = []
+    with open(path) as f:
+        for line in f:
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            # Assign robust ID: use row['id'] if present, else sequential
+            row_id = row.get("id")
+            if row_id is None:
+                row_id = len(examples)
+            # Support SFT-style: {"messages": [...]}
+            if "messages" in row and isinstance(row["messages"], list):
+                user_msgs = [m for m in row["messages"] if m.get("role") == "user"]
+                if user_msgs:
+                    last_user = user_msgs[-1]
+                    prompt = last_user.get("content", "")
+                else:
+                    prompt = ""
                 examples.append(EvalExample(
-                    id=row.get("id"),
-                    prompt=row.get("user_message"), 
-                    expected_style=row.get("expected_style"), 
-                    source=row.get("source")
+                    id=row_id,
+                    prompt=prompt,
+                    expected_style=row.get("expected_style"),
+                    source=row.get("source", "user")  # Metadata only
+                ))
+            elif "user_message" in row:
+                examples.append(EvalExample(
+                    id=row_id,
+                    prompt=row.get("user_message"),
+                    expected_style=row.get("expected_style"),
+                    source=row.get("source", "user")  # Metadata only
                 ))
             elif "prompt" in row:
                 examples.append(EvalExample(
-                    id=row.get("id"),
-                    prompt=row.get("prompt"), 
-                    expected_style=row.get("expected_style"), 
-                    source=row.get("source")
+                    id=row_id,
+                    prompt=row.get("prompt"),
+                    expected_style=row.get("expected_style"),
+                    source=row.get("source", "user")  # Metadata only
                 ))
             else:
                 continue
@@ -82,155 +103,165 @@ def load_eval_examples(path: Path, limit: int | None = None) -> list[EvalExample
     return examples
 
 def build_runtime(settings: Settings, model_path: Path | None = None) -> LLMRuntime:
-    runtime = LLMRuntime(settings=settings)
-
     if model_path is not None:
-        runtime = Settings(adapter_path=model_path)
-
-    runtime.load()
+        os.environ["MODEL_PATH"] = str(model_path)
+    runtime = LLMRuntime(settings=settings)
     return runtime
 
-def generate_prediction(runtime: LLMRuntime, example: EvalExample, max_new_tokens: int | None = None, temperature: float | None = None, top_p: float | None = None) -> EvalPrediction:
-    example = ChatMessage(
-        role=example.source,
+async def generate_prediction(runtime: LLMRuntime, example: EvalExample, max_new_tokens: int | None = None, temperature: float | None = None, top_p: float | None = None) -> EvalPrediction:
+    # Always use role="user" for evaluation
+    message = ChatMessage(
+        role="user",
         content=example.prompt
     )
-
-    if not max_new_tokens:
-        max_new_tokens = runtime.settings.max_new_tokens
-    if not temperature:
-        temperature = runtime.settings.temperature
-    if not top_p:
-        top_p = runtime.settings.top_p
-        
-    generation_request = runtime.make_request()
-    runtime.generate()
-
+    req = runtime.make_request(
+        [message],
+        max_new_tokens=max_new_tokens,
+        temperature=temperature,
+        top_p=top_p
+    )
+    result = await runtime.generate(req)
     return EvalPrediction(
         id=example.id,
         prompt=example.prompt,
-        response_text=example.response_text,
-        raw_text=example.raw_text,
-        latency_ms=example.latency_ms,
-        used_repair=example.used_repair,
-        used_fallback=example.used_fallback
+        response_text=result.final_text,
+        raw_text=result.raw_text,
+        latency_ms=result.latency_ms,
+        used_repair=result.used_repair,
+        used_fallback=result.used_fallback
     )
 
-def generate_predictions_batch(runtime: LLMRuntime, examples: Sequence[EvalExample], max_new_tokens: int | None = None, temperature: float | None = None, top_p: float | None = None) -> list[EvalPrediction]:
+async def generate_predictions_batch(runtime: LLMRuntime, examples: Sequence[EvalExample], max_new_tokens: int | None = None, temperature: float | None = None, top_p: float | None = None) -> list[EvalPrediction]:
     predictions = []
-
     for example in examples:
-        item = generate_prediction(runtime=runtime, 
-                                   example=example, 
-                                   max_new_tokens=max_new_tokens, 
-                                   temperature=temperature, 
-                                   top_p=top_p)
-        predictions.append(item)
-
+        try:
+            pred = await generate_prediction(runtime, example, max_new_tokens, temperature, top_p)
+            predictions.append(pred)
+        except Exception:
+            # Robustness: skip failed example, could log here
+            continue
     return predictions
 
 def evaluate_format(prediction: EvalPrediction, min_questions: int = 3, bullet_style: str = "either") -> FormatEvalResult:
-    ok, num_items, errors, normalized_text = validate_followup_list(prediction=prediction.response_text, 
-                                                                    min_questions=min_questions, 
-                                                                    bullet_style=bullet_style)
+    result = validate_followup_list(
+        text=prediction.response_text,
+        min_questions=min_questions,
+        bullet_style=bullet_style
+    )
     return FormatEvalResult(
         id=prediction.id,
-        format_valid=ok,
-        num_questions=num_items,
-        format_errors=errors,
-        normalized_text=normalized_text
+        format_valid=result.ok,
+        num_questions=result.num_items,
+        format_errors=result.errors,
+        normalized_text=result.normalized_text
     )
 
 def evaluate_format_batch(predictions: Sequence[EvalPrediction], min_questions: int = 3, bullet_style: str = "either") -> list[FormatEvalResult]:
     results = []
     for prediction in predictions:
-        result = evaluate_format(prediction, 
+        result = evaluate_format(prediction=prediction, 
                                  min_questions=min_questions, 
                                  bullet_style=bullet_style)
         results.append(result)
     return results
 
-def build_trulens_dataset(predictions: Sequence[EvalPrediction]) -> pandas.DataFrame:
-    table = {
-        "input/prompt": [p.prompt for p in predictions],
-        "output/response": [p.response_text for p in predictions],
-        "id": [p.id for p in predictions]
-    }
-    return pandas.DataFrame(table)
+def build_trulens_dataset(predictions: Sequence[EvalPrediction]) -> pd.DataFrame:
+    rows = []
+    for pred in predictions:
+        rows.append({
+            "id": pred.id,
+            "inputs": {"question": pred.prompt},
+            "outputs": pred.response_text,
+            "metadata": {"id": pred.id, "source": "user"}  # Could include more metadata if desired
+        })
+    return pd.DataFrame(rows)
 
 def build_trulens_scorers(provider_name: str, metrics: Sequence[str]) -> list[Any]:
+    model = f"{provider_name}:/gpt-4o-mini"
     scorers = []
     if "coherence" in metrics:
-        scorers.append(TruLensCoherenceScorer(provider=provider_name))
+        scorers.append(Coherence(model=model))
     if "answer_relevance" in metrics:
-        scorers.append(TruLensAnswerRelevanceScorer(provider=provider_name))
-
+        scorers.append(AnswerRelevance(model=model))
     return scorers
-
-def run_trulens_batch_eval(dataset: pandas, scorers: Sequence[Any]) -> dict[str, list[float | str | None]]:
     
-    evaluate_format_batch(dataset)
 
-    for scorer in scorers:
-        s = evaluate_format(scorer)
-        board.add(s)
+def run_trulens_batch_eval(dataset, scorers):
+    if not scorers:
+        return pd.DataFrame(dataset)
 
-    board = {
-        "Scorer": #INCOMPLETE
-    }
+    results = mlflow.genai.evaluate(
+        data=dataset,
+        scorers=list(scorers),
+    )
 
-    return pandas.DataFrame(board)
+    return results.tables["eval_results"]
 
-def merge_results(predictions: Sequence[EvalPrediction], format_results: Sequence[FormatEvalResult], trulens_results: pandas):
-    #Match rows by ID
+def merge_results(predictions: Sequence[EvalPrediction], format_results: Sequence[FormatEvalResult], trulens_results: pd.DataFrame) -> list[BatchEvalResult]:
     predictions_dict = {p.id: p for p in predictions}
     format_results_dict = {f.id: f for f in format_results}
-    trulens_results_dict = {r["id"]: r for _, r in trulens_results.iterrows()}    
 
-    return BatchEvalResult(
-        prompt=predictions_dict[predictions.id].prompt,
-        response=predictions_dict[predictions.id].response_text,
-        validation_results=format_results_dict[predictions.id],
-        latency_ms=predictions_dict[predictions.id].latency_ms,
-        used_repair=predictions_dict[predictions.id].used_repair,
-        used_fallback=predictions_dict[predictions.id].used_fallback,
-        trulens_scores=trulens_results_dict[predictions.id]
-    )
+    trulens_results_dict = {int(r["id"]): r for _, r in trulens_results.iterrows()}
+    print(trulens_results.columns)
+
+    results = []
+    for pid in predictions_dict:
+        pred = predictions_dict[pid]
+        fmt = format_results_dict.get(pid)
+        tru = trulens_results_dict.get(pid, {})
+        # Only include columns that look like scores (float/int, not bool, not prompt/response/id)
+        score_fields = {k: v for k, v in dict(tru).items() if isinstance(v, (int, float)) and not isinstance(v, bool) and k not in ("id",)}
+        results.append(BatchEvalResult(
+            id=pid,
+            prompt=pred.prompt,
+            response_text=pred.response_text,
+            format_valid=fmt.format_valid if fmt else False,
+            num_questions=fmt.num_questions if fmt else 0,
+            format_errors=fmt.format_errors if fmt else [],
+            latency_ms=pred.latency_ms,
+            used_repair=pred.used_repair,
+            used_fallback=pred.used_fallback,
+            trulens_scores=score_fields
+        ))
+    return results
 
 def write_results_csv(results: Sequence[BatchEvalResult], out_path: Path):
     with open(out_path, 'w', newline='') as file:
+        writer = csv.DictWriter(file, fieldnames=[
+            "id", "prompt", "response_text", "format_valid", "num_questions", "format_errors", "latency_ms", "used_repair", "used_fallback", "trulens_scores"
+        ])
+        writer.writeheader()
         for row in results:
-            writer = csv.writer(file)
-            writer.writerows(row)
-            writer.writerow("\n")
+            writer.writerow({
+                "id": row.id,
+                "prompt": row.prompt,
+                "response_text": row.response_text,
+                "format_valid": row.format_valid,
+                "num_questions": row.num_questions,
+                "format_errors": "; ".join(row.format_errors),
+                "latency_ms": row.latency_ms,
+                "used_repair": row.used_repair,
+                "used_fallback": row.used_fallback,
+                "trulens_scores": str(row.trulens_scores)
+            })
 
 def write_results_json(results: Sequence[BatchEvalResult], out_path: Path):
-    output_dir = {
-        "id":[results.id],
-        "prompt":[results.prompt],
-        "response_text":[results.response_text],
-        "format_valid":[results.format_valid],
-        "num_questions":[results.num_questions],
-        "format_errors":[results.format_errors],
-        "latency_ms":[results.latency_ms],
-        "used_repair":[results.used_repair],
-        "used_fallback":[results.used_fallback],
-        "trulens_score":[results.trulens_score]
-    }
-    df = pandas.DataFrame(output_dir)
-    with open(out_path, 'w', newline='') as f:
-        fieldNames = ["id", "prompt", "response_text", "format_valid", "num_questions", "format_errors", "latency_ms", "used_repair", "used_fallback", "trulens_score"]
-        writer = csv.DictWriter(f, fieldnames=fieldNames)
-        writer.writeheader()
-        writer.writerows(df)
+    with open(out_path, 'w') as f:
+        json.dump([asdict(r) for r in results], f, indent=2)
 
 def summarise_results(results: Sequence[BatchEvalResult]) -> dict[str, Any]:
-    count_example = len(results.id)
-    format_valid_percentage = sum(result.format_valid for result in results) / len(results.format_valid) * 100
-    average_latency = sum(result.latency_ms for result in results) / len(results.latency_ms) * 100
-    fallback_rate = sum(result.used_fallback for result in results) / len(results.used_fallback) * 100
-    repair_rate = sum(result.used_repair for result in results) / len(results.used_fallback) * 100
-    average_trulens_score = sum(result.trulens_score for result in results) / len(results.trulens_score) * 100
+    count_example = len(results)
+    format_valid_percentage = sum(r.format_valid for r in results) / count_example * 100 if count_example else 0
+    average_latency = sum(r.latency_ms for r in results) / count_example if count_example else 0
+    fallback_rate = sum(r.used_fallback for r in results) / count_example * 100 if count_example else 0
+    repair_rate = sum(r.used_repair for r in results) / count_example * 100 if count_example else 0
+    # Average trulens_score: just average over all float values in trulens_scores
+    trulens_scores = []
+    for r in results:
+        for v in r.trulens_scores.values():
+            if isinstance(v, (int, float)) and not isinstance(v, bool):
+                trulens_scores.append(v)
+    average_trulens_score = sum(trulens_scores) / len(trulens_scores) if trulens_scores else 0
     return {
         "count_example": count_example,
         "format_valid_percentage": format_valid_percentage,
@@ -240,24 +271,33 @@ def summarise_results(results: Sequence[BatchEvalResult]) -> dict[str, Any]:
         "average_trulens_score": average_trulens_score
     }
 
-def run_batch_evaluation(data_path: Path, output_dir: Path, model_path: Path | None = None, limit: int | None = None, min_questions: int = 3, bullet_style: str = "either", metrics: Sequence[str] = ("coherence", "answer_relevance")) -> dict[str, Any]:
+async def run_batch_evaluation(data_path: Path, output_dir: Path, model_path: Path | None = None, limit: int | None = None, min_questions: int = 3, bullet_style: str = "either", metrics: Sequence[str] = ("coherence", "answer_relevance")) -> dict[str, Any]:
+    settings = get_settings()
+    examples = load_eval_examples(path=data_path, limit=limit)
+    runtime = build_runtime(settings, model_path)
 
-    settings_load = get_settings(env=model_path)
-    eval_example_load = load_eval_examples(path=data_path, limit=limit)
-    build_Runtime = build_runtime(settings_load, data_path)
-    
-    generate_Prediction = generate_prediction(build_Runtime, eval_example_load, settings_load.max_new_tokens, settings_load.temperature, settings_load.top_p)
-    run_batch_Evaluation = run_batch_evaluation(generate_Prediction, min_questions, bullet_style)
+    await runtime.load()
 
-    build_trulens_Dataset = build_trulens_dataset(generate_Prediction)
-    build_trulens_Scorers = build_trulens_scorers(provider_name="openai", metrics=metrics)
-    run_trulens_batch_Eval = run_trulens_batch_eval(build_trulens_Dataset, build_trulens_Scorers)
+    predictions = await generate_predictions_batch(runtime, examples, settings.max_new_tokens, settings.temperature, settings.top_p)
+    format_results = [evaluate_format(prediction=pred, min_questions=min_questions, bullet_style=bullet_style) for pred in predictions]
 
-    result_csv = write_results_csv(run_trulens_batch_Eval, output_dir)
-    result_json = write_results_json(run_trulens_batch_Eval, output_dir)
+    trulens_dataset = build_trulens_dataset(predictions)
+    trulens_scorers = build_trulens_scorers(provider_name="openai", metrics=metrics)
+    trulens_results = run_trulens_batch_eval(trulens_dataset, trulens_scorers)
+
+    merged = merge_results(predictions, format_results, trulens_results)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    csv_path = output_dir / "results.csv"
+    json_path = output_dir / "results.json"
+
+    write_results_csv(merged, csv_path)
+    write_results_json(merged, json_path)
+
+    summary = summarise_results(merged)
 
     return {
-        "csv_path": result_csv,
-        "json_path": result_json,
-        "summary": summarise_results(run_trulens_batch_Eval)
+        "csv_path": str(csv_path),
+        "json_path": str(json_path),
+        "summary": summary
     }

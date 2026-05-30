@@ -1,4 +1,5 @@
 from __future__ import annotations
+import asyncio
 
 from llm_followups.eval.batch_eval import run_batch_evaluation
 from pathlib import Path
@@ -18,7 +19,7 @@ def main():
     
     args = parser.parse_args()
     
-    results = run_batch_evaluation(
+    results = asyncio.run(run_batch_evaluation(
         data_path=args.data_path,
         output_dir=args.output_dir,
         model_path=args.model_path,
@@ -26,7 +27,7 @@ def main():
         min_questions=args.min_questions,
         bullet_style=args.bullet_style,
         metrics=args.metrics
-    )
+    ))
     
     print(f"Batch evaluation completed. Results saved to: {results['csv_path']} and {results['json_path']}")
     print(f"Summary: {results['summary']}")
