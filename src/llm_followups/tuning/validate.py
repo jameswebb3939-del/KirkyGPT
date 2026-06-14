@@ -125,115 +125,115 @@ def extract_bullet_items(text: str, *, bullet_style: Literal["dash","asterisk","
     return items
 
 
-def try_repair_to_followups(text: str, *, min_questions: int = 3, bullet_style: Literal["dash","asterisk"] = "dash") -> str | None:
+
+def try_repair_to_followups(text: str, *, min_questions: int = 3, bullet_style: Literal["dash", "asterisk"] = "dash") -> str | None:
     """
     Attempt to repair malformed text into a valid bullet list of questions.
 
-    Extracts bullets, filters for question-marked items, and rebuilds normalized list.
-    
-    Args:
-        text: Text to repair.
-        min_questions: Minimum questions required for valid output.
-        bullet_style: Output bullet style ("dash" or "asterisk").
-    
-    Returns:
-        Repaired bullet list, or None if insufficient valid questions found.
+    Accepts:
+    - dash bullets
+    - asterisk bullets
+    - numbered lines like "1. ..."
+    - mixed forms like "- 2. ..."
+
+    Returns a normalized bullet list if at least min_questions valid questions are found.
     """
-    # Step 1: Guard clauses
     if text is None or not text.strip():
         return None
 
-    # Step 2: Extract bullets (allow either style when repairing)
-    items = extract_bullet_items(text, bullet_style="either")
-
-    # Step 3: Filter invalid items (normalize and require trailing '?')
+    bullet_prefix = "*" if bullet_style == "asterisk" else "-"
     valid_items: list[str] = []
-    for item in items:
-        s = normalize_item_text(item)
+    seen: set[str] = set()
+
+    for raw_line in text.splitlines():
+        s = raw_line.strip()
         if not s:
             continue
-        if not s.endswith("?"):
+
+        # Strip leading bullet marker first if present
+        s = re.sub(r"^[\-\*]\s*", "", s)
+
+        # Strip leading numbering like "1. ", "2. ", etc.
+        s = re.sub(r"^\d+\.\s*", "", s)
+
+        s = normalize_item_text(s)
+        if not s:
             continue
+
+        if not s.endswith("?"):
+            s = s.rstrip(".") + "?"
+
+        if len(s) < 5:
+            continue
+
+        if s in seen:
+            continue
+
+        seen.add(s)
         valid_items.append(s)
 
-    # Step 4: Check minimum viability
     if len(valid_items) < min_questions:
         return None
 
-    # Step 5: Rebuild normalized bullet list
-    bullet_prefix = "*" if bullet_style == "asterisk" else "-"
-    lines = [f"{bullet_prefix} {it}" for it in valid_items]
-    normalized_text = "\n".join(lines)
-
-    # Step 6: Return repaired output
-    return normalized_text
+    lines = [f"{bullet_prefix} {it}" for it in valid_items[:min_questions]]
+    return "\n".join(lines)
 
 
 
-def fallback_followups(prompt_summary: str | None = None, *, min_questions: int = 3, bullet_style: Literal["dash","asterisk"] = "dash") -> str:
+def fallback_followups(prompt_summary: str | None = None, *, min_questions: int = 3, bullet_style: Literal["dash", "asterisk"] = "dash") -> str:
     """
     Generate a guaranteed valid bullet list of follow-up questions.
 
-    Always returns at least min_questions bullet items, each ending with '?'.
-    Optionally uses prompt_summary to tailor wording (topic-specific generation).
-    
-    Args:
-        prompt_summary: Optional hint text for generating topic-specific questions.
-        min_questions: Minimum number of questions to generate.
-        bullet_style: Output bullet style ("dash" or "asterisk").
-    
-    Returns:
-        String with one bullet per line, guaranteed valid format.
+    Tries to stay topic-aware using prompt_summary instead of falling back to the
+    same generic requirement questions every time.
     """
     prefix = "*" if bullet_style == "asterisk" else "-"
+    topic = (prompt_summary or "this topic").strip()
+    topic_lower = topic.lower()
 
-    templates = [
-        "What specific goal are you trying to achieve?",
-        "What constraints or requirements should I consider?",
-        "What would a successful result look like?",
-        "What tools, technologies, or resources are you already using?",
-        "What is the biggest difficulty you are facing right now?",
-        "Are there any examples or references you want me to follow?",
-    ]
+    if "docker" in topic_lower or "container" in topic_lower or "compose" in topic_lower:
+        questions = [
+            "Are you trying to understand Docker conceptually, or use it in a real project?",
+            "Do you want help with Dockerfiles, containers, or Docker Compose?",
+            "Are you using Docker for local development, deployment, or both?",
+        ]
+    elif "pytest" in topic_lower or "test" in topic_lower:
+        questions = [
+            "Are you trying to learn pytest basics, or debug a failing test?",
+            "Do you need help with assertions, fixtures, or test structure?",
+            "Are you working with unit tests, integration tests, or async tests?",
+        ]
+    elif "fastapi" in topic_lower or "api" in topic_lower:
+        questions = [
+            "Are you building a new API or modifying an existing FastAPI service?",
+            "Do you need help with routes, request validation, or response models?",
+            "Are you working with async endpoints, dependency injection, or testing?",
+        ]
+    elif "sqlalchemy" in topic_lower or "database" in topic_lower:
+        questions = [
+            "Are you using SQLAlchemy with synchronous or asynchronous sessions?",
+            "Do you need help with models, queries, or session management?",
+            "Is your main issue related to setup, transactions, or integration into your app?",
+        ]
+    else:
+        questions = [
+            f"What specific part of {topic} do you want help with most?",
+            f"Are you looking for a conceptual explanation of {topic}, or practical steps?",
+            f"What are you trying to achieve with {topic} right now?",
+        ]
 
-    topic_templates: list[str] = []
-    if prompt_summary:
-        topic_hint = " ".join(prompt_summary.strip().split()[:12])
-        if topic_hint:
-            topic_templates = [
-                f"What part of '{topic_hint}' do you want to focus on first?",
-                f"What constraints or requirements matter most for '{topic_hint}'?",
-                f"What result are you hoping to achieve with '{topic_hint}'?",
-                f"What tools, examples, or prior work do you already have for '{topic_hint}'?",
-            ]
+    questions = questions[: max(min_questions, 3)]
 
-    questions: list[str] = []
-    seen: set[str] = set()
-
-    for q in topic_templates:
-        if q not in seen:
-            questions.append(q)
-            seen.add(q)
-        if len(questions) >= min_questions:
-            break
-
-    template_idx = 0
-    while len(questions) < min_questions:
-        q = templates[template_idx % len(templates)]
-        if q not in seen:
-            questions.append(q)
-            seen.add(q)
-        template_idx += 1
-
-    clean_questions = []
+    clean_questions: list[str] = []
     for q in questions:
-        q = q.strip().replace("\n", " ")
-        q = q.replace("??", "?")
-        if not q.endswith("?"):
-            q += "?"
-        clean_questions.append(q)
+        s = q.strip().replace("\n", " ")
+        if not s.endswith("?"):
+            s += "?"
+        clean_questions.append(s)
 
-    return "\n".join(f"{prefix} {q}" for q in clean_questions)
+    return "\n".join(f"{prefix} {q}" for q in clean_questions[:min_questions])
+
+
 
 def accepted_markers_for_style(bullet_style: Literal["dash","asterisk","either"]) -> set[str]:
     if bullet_style == "dash":

@@ -5,6 +5,8 @@ from typing import Any, Iterable, Literal, Sequence, Optional
 import asyncio
 import time
 import logging
+import os
+from pathlib import Path
 
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM, set_seed, PreTrainedTokenizerBase, PreTrainedModel
@@ -17,6 +19,7 @@ from llm_followups.tuning.validate import (
 )
 from llm_followups.server.schemas import ChatMessage
 
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 def _take_bullets(text: str, k: int) -> str | None:
@@ -69,6 +72,7 @@ class LLMRuntime:
         # resolved device ("cpu" or "cuda")
         self._device: str = "cpu"
         self._adapter_loaded: bool = False
+        self._load_path: str | None = None
 
     async def load(self) -> None:
         """
@@ -99,8 +103,20 @@ class LLMRuntime:
         self._device = resolved
         torch_device = torch.device("cuda" if resolved == "cuda" else "cpu")
 
+
+        # Allow override of model path via environment variable
+        model_path = os.getenv("MODEL_PATH")
+
+        if model_path and Path(model_path).exists():
+            load_path = model_path
+        else:
+            load_path = self._settings.model_name
+
+        self._load_path = str(load_path)
+        logger.info("Loading model from: %s", self._load_path)
+
         # Tokenizer: ensure pad token exists
-        tokenizer = AutoTokenizer.from_pretrained(self._settings.model_name, use_fast=True)
+        tokenizer = AutoTokenizer.from_pretrained(load_path, use_fast=True)
         added_tokens = False
         if tokenizer.pad_token is None:
             # fallback to eos_token if pad not set
@@ -118,7 +134,7 @@ class LLMRuntime:
         assert tokenizer.eos_token_id is not None, "eos_token_id must be set"
 
         # Model: CPU-first approach; avoid float16 on CPU
-        model = AutoModelForCausalLM.from_pretrained(self._settings.model_name)
+        model = AutoModelForCausalLM.from_pretrained(load_path)
         # If special tokens were added, resize embeddings
         if added_tokens:
             model.resize_token_embeddings(len(tokenizer))
@@ -163,7 +179,7 @@ class LLMRuntime:
         Returns:
             Model name from settings.
         """
-        return self._settings.model_name
+        return self._load_path or self._settings.model_name
 
     def adapter_loaded(self) -> bool:
         """
@@ -377,12 +393,19 @@ class LLMRuntime:
         # Decode only generated portion
         raw_text = self._tokenizer.decode(generated_ids[0], skip_special_tokens=True).strip()
 
+        logger.info("RAW MODEL OUTPUT: %r", raw_text)
+
         # Extract prompt_summary from last user message if available
         prompt_summary: str | None = None
         for msg in reversed(req.messages):
             if msg.role == "user":
                 prompt_summary = msg.content[:100]  # use first 100 chars of last user msg
                 break
+
+        final_text, used_repair, used_fallback = self.enforce_followup_format(raw_text, prompt_summary=prompt_summary)
+
+        logger.info("FORMAT FLAGS: used_repair=%s used_fallback=%s", used_repair, used_fallback)
+        logger.info("FINAL OUTPUT: %r", final_text)
 
         final_text, used_repair, used_fallback = self.enforce_followup_format(raw_text, prompt_summary=prompt_summary)
 

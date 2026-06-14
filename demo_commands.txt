@@ -1,9 +1,9 @@
 #Terminal 1
 cd ~/llm_followups
 source venv/bin/activate
-export PYTHONPATH=src
-export MODEL_NAME=meta-llama/Llama-3.2-1B-Instruct
-export DEVICE=cpu
+export PYTHONPATH=src (Windows: $env:PYTHONPATH="src")
+export MODEL_NAME=meta-llama/Llama-3.2-1B-Instruct (Windows: $env:MODEL_NAME="meta-llama/Llama-3.2-1B-Instruct")
+export DEVICE=cpu (Windows: $env:DEVICE="cpu")
 
 [Login into huggingface cli
 hf auth login

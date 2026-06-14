@@ -28,8 +28,8 @@ def main() -> int:
         lr=2e-5,
         batch_size=1,
         grad_accum_steps=1,
-        max_steps=200,
-        save_steps=20,
+        epochs=1.0,
+        save_steps=200,
         logging_steps=10,
     )
 
