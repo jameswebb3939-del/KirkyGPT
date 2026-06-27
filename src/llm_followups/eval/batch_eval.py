@@ -200,8 +200,12 @@ def run_trulens_batch_eval(dataset, scorers):
 def merge_results(predictions: Sequence[EvalPrediction], format_results: Sequence[FormatEvalResult], trulens_results: pd.DataFrame) -> list[BatchEvalResult]:
     predictions_dict = {p.id: p for p in predictions}
     format_results_dict = {f.id: f for f in format_results}
+    
+    print(trulens_results.columns.tolist())
+    print(trulens_results.head())
 
     trulens_results_dict = {int(r["id"]): r for _, r in trulens_results.iterrows()}
+    
     print(trulens_results.columns)
 
     results = []
