@@ -12,12 +12,11 @@ from llm_followups.tuning.validate import validate_followup_list
 from llm_followups.server.schemas import ChatMessage
 from llm_followups.server.llm_runtime import LLMRuntime
 
-import pandas as pd
-import json
 from dataclasses import asdict
-import mlflow
-from mlflow.genai.scorers.trulens import Coherence, AnswerRelevance
+from openai import OpenAI
 
+client = OpenAI()
+JUDGE_MODEL = "gpt-4o-mini"
 
 @dataclass(frozen=True)
 class EvalExample:
@@ -59,7 +58,7 @@ class BatchEvalResult:
 
 def load_eval_examples(path: Path, limit: int | None = None) -> list[EvalExample]:
     examples = []
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         for line in f:
             if not line.strip():
                 continue
@@ -137,8 +136,8 @@ async def generate_predictions_batch(runtime: LLMRuntime, examples: Sequence[Eva
         try:
             pred = await generate_prediction(runtime, example, max_new_tokens, temperature, top_p)
             predictions.append(pred)
-        except Exception:
-            # Robustness: skip failed example, could log here
+        except Exception as e:
+            print(f"Parsing through example {example.id} failed: {e}")
             continue
     return predictions
 
@@ -165,58 +164,135 @@ def evaluate_format_batch(predictions: Sequence[EvalPrediction], min_questions: 
         results.append(result)
     return results
 
-def build_trulens_dataset(predictions: Sequence[EvalPrediction]) -> pd.DataFrame:
-    rows = []
+
+def _extract_score_from_json(text: str) -> float | None:
+    try:
+        data = json.loads(text)
+        score = data.get("score")
+        if isinstance(score, (int, float)):
+            return float(score)
+        return None
+    except Exception as e:
+        print(f"JSON score extraction failed: {e}")
+        return None
+
+
+def evaluate_coherence_with_openai(response: str) -> float | None:
+
+    judge_prompt = f"""
+                    You are evaluating an LLM response for coherence.
+
+                    Score from 0 to 3:
+                    0 = incoherent or unreadable
+                    1 = weakly coherent
+                    2 = mostly coherent
+                    3 = very coherent, well-structured, and easy to follow
+
+                    Return exactly one JSON object and no markdown.
+                    {{"score": number, "reason": "short explanation"}}
+
+                    Response to evaluate:
+                    {response}
+                    """
+
+    try:
+        result = client.chat.completions.create(
+            model=JUDGE_MODEL,
+            messages=[
+                {"role": "system", "content": "You are a strict LLM evaluation judge."},
+                {"role": "user", "content": judge_prompt},
+            ],
+            temperature=0,
+            response_format={"type": "json_object"},
+        )
+
+        content = result.choices[0].message.content
+        if content is None:
+            return None
+
+        return _extract_score_from_json(content)
+
+    except Exception as e:
+        print(f"Coherence evaluation failed: {e}")
+        return None
+
+
+def evaluate_relevance_with_openai(prompt: str, response: str) -> float | None:
+
+    judge_prompt = f"""
+                    You are evaluating an LLM response for answer relevance.
+
+                    Score from 0 to 3:
+                    0 = not relevant to the prompt
+                    1 = slightly relevant
+                    2 = mostly relevant
+                    3 = directly relevant and useful
+
+                    Return exactly one JSON object and no markdown:
+                    {{"score": number, "reason": "short explanation"}}
+
+                    Original prompt:
+                    {prompt}
+
+                    Response to evaluate:
+                    {response}
+                    """
+
+    try:
+        result = client.chat.completions.create(
+            model=JUDGE_MODEL,
+            messages=[
+                {"role": "system", "content": "You are a strict LLM evaluation judge."},
+                {"role": "user", "content": judge_prompt},
+            ],
+            temperature=0,
+            response_format={"type": "json_object"},
+        )
+
+        content = result.choices[0].message.content
+        if content is None:
+            return None
+
+        return _extract_score_from_json(content)
+
+    except Exception as e:
+        print(f"Relevance evaluation failed: {e}")
+        return None
+
+def run_trulens_batch_eval(predictions: Sequence[EvalPrediction]) -> dict[int, dict[str, float | None]]:
+    scores: dict[int, dict[str, float | None]] = {}
+
     for pred in predictions:
-        rows.append({
-            "id": pred.id,
-            "inputs": {"question": pred.prompt},
-            "outputs": pred.response_text,
-            "metadata": {"id": pred.id, "source": "user"}  # Could include more metadata if desired
-        })
-    return pd.DataFrame(rows)
+        coherence_score = evaluate_coherence_with_openai(
+            response=pred.response_text,
+        )
+        relevance_score = evaluate_relevance_with_openai(
+            prompt=pred.prompt,
+            response=pred.response_text,
+        )
 
-def build_trulens_scorers(provider_name: str, metrics: Sequence[str]) -> list[Any]:
-    model = f"{provider_name}:/gpt-4o-mini"
-    scorers = []
-    if "coherence" in metrics:
-        scorers.append(Coherence(model=model))
-    if "answer_relevance" in metrics:
-        scorers.append(AnswerRelevance(model=model))
-    return scorers
-    
+        scores[pred.id] = {
+            "coherence_score": coherence_score,
+            "answer_relevance_score": relevance_score,
+        }
 
-def run_trulens_batch_eval(dataset, scorers):
-    if not scorers:
-        return pd.DataFrame(dataset)
+    return scores
 
-    results = mlflow.genai.evaluate(
-        data=dataset,
-        scorers=list(scorers),
-    )
-
-    return results.tables["eval_results"]
-
-def merge_results(predictions: Sequence[EvalPrediction], format_results: Sequence[FormatEvalResult], trulens_results: pd.DataFrame) -> list[BatchEvalResult]:
-    predictions_dict = {p.id: p for p in predictions}
+def merge_results(
+    predictions: Sequence[EvalPrediction],
+    format_results: Sequence[FormatEvalResult],
+    trulens_results: dict[int, dict[str, float | None]],
+) -> list[BatchEvalResult]:
     format_results_dict = {f.id: f for f in format_results}
-    
-    print(trulens_results.columns.tolist())
-    print(trulens_results.head())
-
-    trulens_results_dict = {int(r["id"]): r for _, r in trulens_results.iterrows()}
-    
-    print(trulens_results.columns)
 
     results = []
-    for pid in predictions_dict:
-        pred = predictions_dict[pid]
-        fmt = format_results_dict.get(pid)
-        tru = trulens_results_dict.get(pid, {})
-        # Only include columns that look like scores (float/int, not bool, not prompt/response/id)
-        score_fields = {k: v for k, v in dict(tru).items() if isinstance(v, (int, float)) and not isinstance(v, bool) and k not in ("id",)}
+
+    for pred in predictions:
+        fmt = format_results_dict.get(pred.id)
+        scores = trulens_results.get(pred.id, {})
+
         results.append(BatchEvalResult(
-            id=pid,
+            id=pred.id,
             prompt=pred.prompt,
             response_text=pred.response_text,
             format_valid=fmt.format_valid if fmt else False,
@@ -225,9 +301,11 @@ def merge_results(predictions: Sequence[EvalPrediction], format_results: Sequenc
             latency_ms=pred.latency_ms,
             used_repair=pred.used_repair,
             used_fallback=pred.used_fallback,
-            trulens_scores=score_fields
+            trulens_scores=scores,
         ))
+
     return results
+
 
 def write_results_csv(results: Sequence[BatchEvalResult], out_path: Path):
     with open(out_path, 'w', newline='') as file:
@@ -275,7 +353,7 @@ def summarise_results(results: Sequence[BatchEvalResult]) -> dict[str, Any]:
         "average_trulens_score": average_trulens_score
     }
 
-async def run_batch_evaluation(data_path: Path, output_dir: Path, model_path: Path | None = None, limit: int | None = None, min_questions: int = 3, bullet_style: str = "either", metrics: Sequence[str] = ("coherence", "answer_relevance")) -> dict[str, Any]:
+async def run_batch_evaluation(data_path: Path, output_dir: Path, model_path: Path | None = None, limit: int | None = None, min_questions: int = 3, bullet_style: str = "either") -> dict[str, Any]:
     settings = get_settings()
     examples = load_eval_examples(path=data_path, limit=limit)
     runtime = build_runtime(settings, model_path)
@@ -283,11 +361,9 @@ async def run_batch_evaluation(data_path: Path, output_dir: Path, model_path: Pa
     await runtime.load()
 
     predictions = await generate_predictions_batch(runtime, examples, settings.max_new_tokens, settings.temperature, settings.top_p)
-    format_results = [evaluate_format(prediction=pred, min_questions=min_questions, bullet_style=bullet_style) for pred in predictions]
+    format_results = evaluate_format_batch(predictions)
 
-    trulens_dataset = build_trulens_dataset(predictions)
-    trulens_scorers = build_trulens_scorers(provider_name="openai", metrics=metrics)
-    trulens_results = run_trulens_batch_eval(trulens_dataset, trulens_scorers)
+    trulens_results = run_trulens_batch_eval(predictions)
 
     merged = merge_results(predictions, format_results, trulens_results)
     output_dir.mkdir(parents=True, exist_ok=True)

@@ -15,7 +15,6 @@ def main():
     parser.add_argument("--limit", type=int, default=None, help="Optional limit on number of examples to evaluate.")
     parser.add_argument("--min_questions", type=int, default=3, help="Minimum number of follow-up questions required for valid output.")
     parser.add_argument("--bullet_style", type=str, choices=["dash", "asterisk", "either"], default="either", help="Bullet style for follow-up questions in prompts.")
-    parser.add_argument("--metrics", nargs="+", default=["coherence", "answer_relevance"], help="List of TruLens metrics to compute.")
     
     args = parser.parse_args()
     
@@ -25,8 +24,7 @@ def main():
         model_path=args.model_path,
         limit=args.limit,
         min_questions=args.min_questions,
-        bullet_style=args.bullet_style,
-        metrics=args.metrics
+        bullet_style=args.bullet_style
     ))
     
     print(f"Batch evaluation completed. Results saved to: {results['csv_path']} and {results['json_path']}")
