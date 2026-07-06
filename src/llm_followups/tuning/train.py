@@ -33,20 +33,18 @@ class TrainConfig:
     eval_steps: int | None = None
 
 def resolve_device(device: Literal["cpu", "cuda", "auto"]) -> str:
-    """
-    Resolve device specification to actual device string.
-    
-    Args:
-        device: Device specification ("cpu", "cuda", or "auto").
-    
-    Returns:
-        Resolved device string ("cpu" or "cuda").
-    """
     if device == "cpu":
         return "cpu"
-    elif device == ("cuda", "auto"):
+
+    if device == "cuda":
+        if not torch.cuda.is_available():
+            raise RuntimeError("CUDA was requested but torch.cuda.is_available() is False")
+        return "cuda"
+
+    if device == "auto":
         return "cuda" if torch.cuda.is_available() else "cpu"
-    return "cpu"
+
+    raise ValueError(f"Unsupported device: {device}")
     
 def load_model_and_tokenizer(model_name: str, *, device: str) -> tuple[AutoTokenizer, AutoModelForCausalLM]:
     """

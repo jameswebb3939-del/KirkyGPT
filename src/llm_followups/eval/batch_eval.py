@@ -308,7 +308,7 @@ def merge_results(
 
 
 def write_results_csv(results: Sequence[BatchEvalResult], out_path: Path):
-    with open(out_path, 'w', newline='') as file:
+    with open(out_path, "w", newline='', encoding="utf-8") as file:
         writer = csv.DictWriter(file, fieldnames=[
             "id", "prompt", "response_text", "format_valid", "num_questions", "format_errors", "latency_ms", "used_repair", "used_fallback", "trulens_scores"
         ])
@@ -328,8 +328,8 @@ def write_results_csv(results: Sequence[BatchEvalResult], out_path: Path):
             })
 
 def write_results_json(results: Sequence[BatchEvalResult], out_path: Path):
-    with open(out_path, 'w') as f:
-        json.dump([asdict(r) for r in results], f, indent=2)
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump([asdict(r) for r in results], f, indent=2, ensure_ascii=False)
 
 def summarise_results(results: Sequence[BatchEvalResult]) -> dict[str, Any]:
     count_example = len(results)

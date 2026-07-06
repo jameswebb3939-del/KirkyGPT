@@ -135,9 +135,15 @@ class LLMRuntime:
 
         # Model: CPU-first approach; avoid float16 on CPU
         model = AutoModelForCausalLM.from_pretrained(load_path)
+
+        logger.info("Tokenizer vocab size: %d", len(tokenizer))
+        logger.info("Model vocab size: %d", model.config.vocab_size)
+        logger.info("Pad token id: %s", tokenizer.pad_token_id)
+        logger.info("EOS token id: %s", tokenizer.eos_token_id)
         # If special tokens were added, resize embeddings
         if added_tokens:
             model.resize_token_embeddings(len(tokenizer))
+        logger.info("Runtime device: %s", self._device)
         model.to(torch_device)
         model.eval()
 
@@ -209,16 +215,18 @@ class LLMRuntime:
             bullet_char = "-"
 
         sys_instruction = (
-            f"Return at least {self._settings.min_questions} follow-up questions.\n"
-            "Output ONLY a bullet list using the following rules:\n"
-            f"- Use '{bullet_char}' as the bullet marker on each line.\n"
-            "- Do not include any prose before or after the bullet list.\n"
-            "- Each bullet must be a question and end with a question mark ('?').\n"
-            "- Do not include numbering or extra commentary.\n"
-            "- Each question must be specific to the user's input.\n"
-            "- Avoid generic templates like 'What is the main goal' or repeating the same structure.\n"
-            "- Use varied phrasing across questions.\n"
-            "- Ask concrete, context-aware follow-up questions."
+            f"Return exactly {self._settings.min_questions} follow-up questions.\n"
+            "Output ONLY the questions.\n"
+            "The first character of the output must be '-'.\n"
+            "Every line must begin with '- '.\n"
+            "Every line must end with '?'.\n"
+            "Do not write any introduction.\n"
+            "Do not write any explanation.\n"
+            "Do not write any summary.\n"
+            "Do not number the questions.\n"
+            "Do not leave blank lines.\n"
+            "Each question must be specific to the user's request.\n"
+            "Use varied wording.\n"
         )
 
         parts: list[str] = []
@@ -238,7 +246,7 @@ class LLMRuntime:
                 parts.append(f"{role.capitalize()}: {content}")
 
         # Final assistant cue: force bullet start
-        parts.append(f"Assistant:\n{bullet_char} ")
+        parts.append("Assistant:")
         return "\n\n".join(parts)
 
     def enforce_followup_format(self, text: str, *, prompt_summary: str | None = None) -> tuple[str, bool, bool]:
@@ -371,20 +379,27 @@ class LLMRuntime:
             # Store input length before generation
             input_len = inputs.get("input_ids").shape[1]
 
-            do_sample = req.temperature > 0.0
+            do_sample = False
 
             # Run generation with inference mode and explicit token ids
+            generation_kwargs: dict[str, Any] = {
+                "max_new_tokens": req.max_new_tokens,
+                "min_new_tokens": min(45, req.max_new_tokens),
+                "do_sample": do_sample,
+                "repetition_penalty": 1.10,
+                "no_repeat_ngram_size": 3,
+                "pad_token_id": self._tokenizer.pad_token_id,
+                "eos_token_id": self._tokenizer.eos_token_id,
+            }
+
+            if do_sample:
+                generation_kwargs["temperature"] = req.temperature
+                generation_kwargs["top_p"] = req.top_p
+
             with torch.inference_mode():
                 gen_output = self._model.generate(
                     **inputs,
-                    max_new_tokens=req.max_new_tokens,
-                    temperature=req.temperature,
-                    top_p=req.top_p,
-                    do_sample=do_sample,
-                    repetition_penalty=1.10,
-                    no_repeat_ngram_size=3,
-                    pad_token_id=self._tokenizer.pad_token_id,
-                    eos_token_id=self._tokenizer.eos_token_id,
+                    **generation_kwargs,
                 )
 
         # slice to only the newly generated tokens
@@ -406,8 +421,6 @@ class LLMRuntime:
 
         logger.info("FORMAT FLAGS: used_repair=%s used_fallback=%s", used_repair, used_fallback)
         logger.info("FINAL OUTPUT: %r", final_text)
-
-        final_text, used_repair, used_fallback = self.enforce_followup_format(raw_text, prompt_summary=prompt_summary)
 
         t1 = time.time()
         latency_ms = int((t1 - t0) * 1000)

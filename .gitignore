@@ -47,3 +47,23 @@ Thumbs.db
 
 # Local services
 .localstack/
+
+# Secrets / local config
+.env
+.env.*
+!.env.example
+
+# Hugging Face local auth/cache
+.huggingface/
+token
+
+# Large model/checkpoint files
+*.safetensors
+*.bin
+*.pt
+*.pth
+*.ckpt
+
+# Experiment tracking
+wandb/
+mlruns/

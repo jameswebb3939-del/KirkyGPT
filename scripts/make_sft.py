@@ -1,606 +1,916 @@
-#!/usr/bin/env python3
-"""
-make_sft.py
-
-Generate a JSONL dataset for "follow-up questions" SFT.
-
-Each JSONL line is a single training example shaped like:
-{
-  "messages": [
-    {"role": "user", "content": "..."},
-    {"role": "assistant", "content": "- ...?\n- ...?\n- ...?"}
-  ],
-  "max_new_tokens": 128,
-  "temperature": 0.2,
-  "top_p": 0.9
-}
-
-Goals:
-- Assistant output is *only* bullet questions (no extra text)
-- Bullets use "-" (hyphen) lines
-- Each line ends with "?"
-- No numbered lists
-- Questions are not "too short"
-- Deterministic output via --seed
-
-Usage:
-  PYTHONPATH=src python scripts/make_sft.py --out data/sft_followups.jsonl --n 300 --seed 42
-
-Optional:
-  PYTHONPATH=src python scripts/make_sft.py --topics data/topics.txt --out data/sft_followups.jsonl --n 500
-"""
-
 from __future__ import annotations
 
 import argparse
 import json
 import random
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, List, Sequence
+from typing import Any
 
 
 # ----------------------------
-# Templates / content
+# Topic specifications
 # ----------------------------
-
-DEFAULT_TOPICS: list[str] = [
-    "learning Python",
-    "debugging a failing pytest test",
-    "writing a clean README for a GitHub project",
-    "setting up a pyproject.toml for a Python package",
-    "understanding async/await in Python",
-    "designing a REST API with FastAPI",
-    "building a Flask app with Docker Compose",
-    "using SQLAlchemy 2.0 async sessions correctly",
-    "writing unit tests with pytest-asyncio",
-    "creating a data validation schema with Pydantic",
-    "preparing a JSONL dataset for SFT training",
-    "fine-tuning a small language model locally",
-    "improving code quality with Ruff and formatting tools",
-    "logging best practices in Python",
-    "structuring a Python project with src/ layout",
-    "handling environment variables with .env files",
-    "writing a CLI tool with argparse",
-    "working with DynamoDB in LocalStack",
-    "uploading and downloading from S3 with boto3",
-    "storing sessions in Redis",
-    "designing repository + unit-of-work patterns",
-]
-
-PROMPT_TEMPLATES: list[str] = [
-    "Give me {k} follow-up questions about {topic}.",
-    "Ask me {k} clarifying questions so you can help with {topic}.",
-    "I need {k} follow-up questions that would improve my understanding of {topic}.",
-    "Generate {k} questions you would ask before starting work on {topic}.",
-    "Write {k} follow-up questions to gather requirements for {topic}.",
-    "What are {k} follow-up questions you would ask about {topic}?",
-    "Before helping with {topic}, ask me {k} useful clarifying questions.",
-    "Ask {k} tailored questions that would help you give better advice about {topic}.",
-    "Generate {k} specific follow-up questions about {topic}, not generic ones.",
-    "Ask {k} concrete questions that would clarify my exact needs for {topic}.",
-    "Before answering, ask {k} questions that would make your help on {topic} more precise.",
-    "Write {k} varied follow-up questions that are specific to {topic}.",
-]
-
-QUESTION_BANK: dict[str, list[str]] = {
-    # Generic / requirements
-    "generic": [
-        "What is your goal and how will you measure success for this?",
-        "What constraints do you have (time, tools, environment, or requirements)?",
-        "What have you tried already, and what happened when you tried it?",
-        "Can you share a minimal reproducible example or a small snippet to work from?",
-        "What does the expected output look like, and what is the actual output now?",
-        "Are there any non-negotiables (format, style, performance, or compatibility)?",
-    ],
-    
-    # FastAPI
-    "fastapi": [
-        "Are you designing a new FastAPI service or modifying an existing one?",
-        "Do you need help with routing, request validation, dependency injection, or response models?",
-        "Are you working with synchronous endpoints, async endpoints, or a mix of both?",
-        "Do you want help structuring the API, handling errors, or testing endpoints?",
-        "Is your main goal local development, production deployment, or both?",
-    ],
-    
-    # Flask
-    "flask": [
-        "Are you building a simple Flask app, a larger multi-file project, or an API service?",
-        "Do you need help with routes, templates, forms, or application structure?",
-        "Are you running Flask locally, in Docker, or with multiple services?",
-        "Do you want help debugging a Flask issue or setting up the project from scratch?",
-        "Are you using Flask mainly for learning, prototyping, or a real project?",
-    ],
-    
-    # SQLAlchemy
-    "sqlalchemy": [
-        "Are you using SQLAlchemy with sync sessions or async sessions?",
-        "Do you need help with models, relationships, queries, or session management?",
-        "Are you trying to structure a repository pattern, unit-of-work pattern, or both?",
-        "Is the issue related to database setup, querying, transactions, or testing?",
-        "What database backend are you using with SQLAlchemy?",
-    ],
-    
-    # Redis
-    "redis": [
-        "Are you using Redis for caching, session storage, queues, or something else?",
-        "Do you need help connecting to Redis, designing keys, or handling expiry correctly?",
-        "Are you working with Redis locally, in Docker, or through another service?",
-        "Is your issue about storing data, retrieving data, or debugging connection problems?",
-        "Do you want a simple example or help integrating Redis into an existing app?",
-    ],
-
-    # S3    
-    "s3": [
-        "Are you working with S3 for uploads, downloads, bucket setup, or access control?",
-        "Do you need help using boto3, handling object paths, or managing credentials?",
-        "Are you using real AWS S3 or a local emulator like LocalStack?",
-        "Is your main issue authentication, bucket configuration, or file handling?",
-        "Do you want help with a script, an app integration, or testing S3 locally?",
-    ],
-    
-    # DynamoDB
-    "dynamodb": [
-        "Are you designing a new DynamoDB table or working with an existing one?",
-        "Do you need help with partition keys, sort keys, or item access patterns?",
-        "Are you using DynamoDB locally through LocalStack or against AWS directly?",
-        "Is the challenge about table design, CRUD operations, or boto3 integration?",
-        "Do you want help with a small example or with integrating DynamoDB into an app?",
-    ],
-    
-    # Localstack
-    "localstack": [
-        "Which AWS service are you using through LocalStack right now?",
-        "Are you trying to start LocalStack, connect an app to it, or debug a service issue?",
-        "Do you need help with Docker Compose setup, endpoint configuration, or test data seeding?",
-        "Is the issue specific to S3, DynamoDB, or another LocalStack-backed service?",
-        "Are you aiming for local development only or for tests that mimic AWS behaviour more closely?",
-    ],
-
-    # Python learning
-    "python": [
-        "What is your current Python level, and what topics do you find hardest right now?",
-        "Are you learning Python for scripting, data, backend, automation, or interviews?",
-        "Do you prefer learning by projects, exercises, or reading documentation first?",
-        "Which concepts are you focusing on next (functions, OOP, typing, async, testing)?",
-        "What is one small project you want to build to practise this topic?",
-    ],
-    
-    # Testing / pytest
-    "pytest": [
-        "Which test file and test function is failing, and what is the full error output?",
-        "What fixtures are involved, and what scope do they use?",
-        "Are you running pytest with PYTHONPATH=src or using an installed package?",
-        "Do you rely on marks (unit/integration), and are those marks registered?",
-        "Is the failure deterministic, or does it depend on ordering or environment variables?",
-    ],
-    
-    # Docker
-    "docker": [
-        "Are you trying to use Docker for local development, deployment, or both?",
-        "Do you need help writing a Dockerfile, running containers, or using Docker Compose?",
-        "What kind of application are you planning to run inside Docker?",
-        "Are you working on Linux, macOS, or Windows?",
-        "Do you want to understand Docker images, containers, volumes, or networking first?",
-    ],
-    
-    # README / docs
-    "readme": [
-        "Who is the target audience for this README (recruiters, teammates, or users)?",
-        "What is the simplest 'quickstart' command sequence a new user should run?",
-        "What environment variables or prerequisites do you need to document clearly?",
-        "What is the project structure and which entry points should a reader start with?",
-        "What examples should be included to demonstrate expected inputs and outputs?",
-    ],
-    
-    # pyproject
-    "pyproject": [
-        "What is the package name and the import path under src/ (module name)?",
-        "Which Python versions do you want to support, and do you need 3.13 features?",
-        "What are the runtime dependencies versus dev dependencies (tests, lint, format)?",
-        "Do you want console scripts (CLI entry points), and what command name should they use?",
-        "Do you want strict typing checks and Ruff rules, or keep it minimal for now?",
-    ],
-    
-    # Training / SFT
-    "sft": [
-        "What exact output format must the assistant follow (bullets only, min questions, question marks)?",
-        "Do you want the model to always ask clarifying questions, or sometimes answer and then ask?",
-        "What topics should the follow-up questions cover, and what topics should be excluded?",
-        "How many examples do you want to generate, and do you need train/valid splits?",
-        "Do you want deterministic generation (seeded) for reproducible datasets?",
-    ],
-}
-
-
-# ----------------------------
-# Helpers
-# ----------------------------
-
-GENERIC_STARTERS: tuple[str, ...] = (
-    "what is",
-    "what are",
-    "what have",
-    "what does",
-    "can you",
-    "are there",
-)
-
-TOPIC_KEYWORDS: dict[str, list[str]] = {
-    "docker": ["docker", "dockerfile", "container", "compose", "image"],
-    "fastapi": ["fastapi", "api", "endpoint", "request", "response"],
-    "flask": ["flask", "app", "route", "request"],
-    "sqlalchemy": ["sqlalchemy", "session", "model", "query", "database"],
-    "redis": ["redis", "cache", "session", "key"],
-    "s3": ["s3", "bucket", "object", "upload", "download"],
-    "dynamodb": ["dynamodb", "table", "item", "partition key"],
-    "localstack": ["localstack", "aws", "service", "endpoint"],
-    "pytest": ["pytest", "test", "fixture", "assert"],
-    "readme": ["readme", "project", "quickstart", "documentation"],
-    "pyproject": ["pyproject", "package", "dependency", "build"],
-    "pydantic": ["pydantic", "schema", "validation", "model"],
-    "async": ["async", "await", "concurrency", "event loop"],
-    "cli": ["cli", "command", "argument", "terminal"],
-    "python": ["python", "script", "function", "project"],
-    "sft": ["dataset", "training", "sft", "jsonl", "fine-tuning"],
-}
-
-
-def _topic_keywords(topic: str) -> list[str]:
-    t = topic.lower()
-    found: list[str] = []
-    for key, words in TOPIC_KEYWORDS.items():
-        if key in t:
-            found.extend(words)
-    if found:
-        seen = set()
-        out: list[str] = []
-        for word in found:
-            if word not in seen:
-                seen.add(word)
-                out.append(word)
-        return out
-
-    tokens = [tok.strip(" ,./()-").lower() for tok in topic.split()]
-    return [tok for tok in tokens if len(tok) > 3][:4]
-
-
-def _question_stem(text: str) -> str:
-    q = text.strip().lower()
-    q = q[:-1] if q.endswith("?") else q
-    words = q.split()
-    return " ".join(words[:3])
-
-
-def _starts_generic(text: str) -> bool:
-    q = text.strip().lower()
-    return q.startswith(GENERIC_STARTERS)
-
-
-def _mentions_topic_keyword(text: str, topic: str) -> bool:
-    q = text.lower()
-    return any(word in q for word in _topic_keywords(topic))
-
-def _read_topics_file(path: Path) -> list[str]:
-    topics: list[str] = []
-    for raw in path.read_text(encoding="utf-8").splitlines():
-        line = raw.strip()
-        if not line or line.startswith("#"):
-            continue
-        topics.append(line)
-    return topics
-
-
-def _choose_question_pool(topic: str) -> tuple[list[str], list[str]]:
-    t = topic.lower()
-    specific_pools: list[list[str]] = []
-    generic_pool: list[str] = QUESTION_BANK["generic"][:]
-    if "docker" in t or "compose" in t or "container" in t:
-        specific_pools.append(QUESTION_BANK["docker"])
-
-    if "fastapi" in t or "rest api" in t or "api" in t:
-        specific_pools.append(QUESTION_BANK["fastapi"])
-
-    if "flask" in t:
-        specific_pools.append(QUESTION_BANK["flask"])
-
-    if "sqlalchemy" in t or "unit-of-work" in t or "repository" in t or "database" in t:
-        specific_pools.append(QUESTION_BANK["sqlalchemy"])
-
-    if "redis" in t:
-        specific_pools.append(QUESTION_BANK["redis"])
-
-    if "s3" in t or "boto3" in t or "bucket" in t:
-        specific_pools.append(QUESTION_BANK["s3"])
-
-    if "dynamodb" in t:
-        specific_pools.append(QUESTION_BANK["dynamodb"])
-
-    if "localstack" in t:
-        specific_pools.append(QUESTION_BANK["localstack"])
-
-    if "pytest" in t or "test" in t:
-        specific_pools.append(QUESTION_BANK["pytest"])
-
-    if "readme" in t or "documentation" in t or "github" in t:
-        specific_pools.append(QUESTION_BANK["readme"])
-
-    if "pyproject" in t or "toml" in t or "packag" in t:
-        specific_pools.append(QUESTION_BANK["pyproject"])
-
-    if "sft" in t or "jsonl" in t or "fine-tun" in t or "tuning" in t or "train" in t:
-        specific_pools.append(QUESTION_BANK["sft"])
-
-    if "python" in t:
-        specific_pools.append(QUESTION_BANK["python"])
-
-    seen_specific = set()
-    specific: list[str] = []
-    for pool in specific_pools:
-        for q in pool:
-            if q not in seen_specific:
-                seen_specific.add(q)
-                specific.append(q)
-
-    return specific, generic_pool
-
-
-def _is_valid_bullet_line(line: str, *, min_chars: int) -> bool:
-    # Must start with "- "
-    if not line.startswith("- "):
-        return False
-    body = line[2:].strip()
-
-    # Must end with '?'
-    if not body.endswith("?"):
-        return False
-
-    # Must not look like numbered lists
-    # (We don't allow "1. " anywhere)
-    if body.lstrip().startswith(tuple(f"{i}." for i in range(1, 10))):
-        return False
-
-    # Must be long enough to avoid your validator "Too short"
-    # Count characters excluding trailing '?'
-    core = body[:-1].strip()
-    return len(core) >= min_chars
-
-
-def _format_bullets(questions: Sequence[str]) -> str:
-    lines = [f"- {q.strip()}" for q in questions]
-    return "\n".join(lines).strip() + "\n"
-
-
-def _ensure_question_marks(questions: Sequence[str]) -> list[str]:
-    out: list[str] = []
-    for q in questions:
-        s = q.strip()
-        if not s.endswith("?"):
-            s = s.rstrip(".") + "?"
-        out.append(s)
-    return out
-
-
-def _generate_questions(rng: random.Random, topic: str, k: int, *, min_chars: int) -> list[str]:
-    specific_pool, generic_pool = _choose_question_pool(topic)
-
-    specific_candidates = specific_pool[:]
-    generic_candidates = generic_pool[:]
-    rng.shuffle(specific_candidates)
-    rng.shuffle(generic_candidates)
-
-    picked: list[str] = []
-    used_stems: set[str] = set()
-    generic_used = 0
-
-    def try_add(question: str) -> bool:
-        nonlocal generic_used
-
-        q = question.strip()
-        if "this" in q and rng.random() < 0.35:
-            q = q.replace("this", topic)
-
-        q = _ensure_question_marks([q])[0]
-        stem = _question_stem(q)
-
-        if stem in used_stems:
-            return False
-
-        core = q[:-1].strip()
-        if len(core) < min_chars:
-            return False
-
-        if _starts_generic(q) and generic_used >= 1:
-            return False
-
-        if _starts_generic(q):
-            generic_used += 1
-
-        used_stems.add(stem)
-        picked.append(q)
-        return True
-
-    min_specific = min(2, k) if specific_candidates else 0
-
-    for q in specific_candidates:
-        if len(picked) >= min_specific:
-            break
-        try_add(q)
-
-    mixed_candidates = specific_candidates + generic_candidates
-    rng.shuffle(mixed_candidates)
-
-    for q in mixed_candidates:
-        if len(picked) >= k:
-            break
-        try_add(q)
-
-    while len(picked) < k:
-        keywords = _topic_keywords(topic)
-        if len(picked) == 0 and keywords:
-            fallback = f"Are you working with {keywords[0]} for learning, debugging, or building something specific?"
-        elif len(picked) == 1 and len(keywords) >= 2:
-            fallback = f"Do you need help with {keywords[0]}, {keywords[1]}, or the overall workflow for {topic}?"
-        elif len(picked) == 2:
-            fallback = f"What specific outcome are you trying to achieve with {topic}?"
-        else:
-            fallback = rng.choice(generic_pool)
-
-        added = try_add(fallback)
-        if not added:
-            alt = f"What part of {topic} is most important for you right now?"
-            if not try_add(alt):
-                picked.append(_ensure_question_marks([alt])[0])
-                break
-
-    if not any(_mentions_topic_keyword(q, topic) for q in picked):
-        keywords = _topic_keywords(topic)
-        if keywords:
-            picked[0] = f"Are you mainly focused on {keywords[0]} in the context of {topic}?"
-
-    picked = _ensure_question_marks(picked)
-
-    repaired: list[str] = []
-    used_repaired_stems: set[str] = set()
-    generic_used_repaired = 0
-
-    for q in picked:
-        core = q[:-1].strip() if q.endswith("?") else q.strip()
-        if len(core) < min_chars:
-            q = f"What specific outcome are you trying to achieve with {topic}?"
-
-        stem = _question_stem(q)
-        if stem in used_repaired_stems:
-            continue
-
-        if _starts_generic(q):
-            if generic_used_repaired >= 1:
-                continue
-            generic_used_repaired += 1
-
-        used_repaired_stems.add(stem)
-        repaired.append(_ensure_question_marks([q])[0])
-
-    while len(repaired) < k:
-        filler = f"What part of {topic} do you want to clarify first?"
-        stem = _question_stem(filler)
-        if stem not in used_repaired_stems:
-            used_repaired_stems.add(stem)
-            repaired.append(_ensure_question_marks([filler])[0])
-        else:
-            repaired.append(_ensure_question_marks([f"What specific constraint matters most for {topic}?"])[0])
-
-    return repaired[:k]
 
 @dataclass(frozen=True)
-class RowConfig:
-    max_new_tokens: int = 128
-    temperature: float = 0.2
-    top_p: float = 0.9
+class TopicSpec:
+    subject: str
+    components: list[str]
+    decisions: list[str]
+    tools: list[str]
+    constraints: list[str]
 
 
-def build_row(*, user_prompt: str, assistant_bullets: str, row_cfg: RowConfig) -> dict:
+DEFAULT_TOPICS: list[TopicSpec] = [
+    TopicSpec(
+        subject="designing repository and Unit of Work patterns with SQLAlchemy",
+        components=[
+            "repositories",
+            "Unit of Work boundary",
+            "SQLAlchemy sessions",
+            "domain entities",
+            "ORM models",
+            "service layer",
+        ],
+        decisions=[
+            "commit ownership",
+            "rollback handling",
+            "repository granularity",
+            "transaction boundaries",
+            "test doubles",
+            "domain model separation",
+        ],
+        tools=[
+            "SQLAlchemy 2.0",
+            "FastAPI",
+            "MySQL",
+            "SQLite tests",
+            "async sessions",
+            "pytest",
+        ],
+        constraints=[
+            "async support",
+            "transaction safety",
+            "testability",
+            "clean architecture",
+            "low coupling",
+            "maintainability",
+        ],
+    ),
+    TopicSpec(
+        subject="using SQLAlchemy 2.0 async sessions correctly",
+        components=[
+            "async session lifecycle",
+            "engine configuration",
+            "dependency injection",
+            "queries",
+            "transactions",
+            "connection pooling",
+        ],
+        decisions=[
+            "session-per-request",
+            "manual commits",
+            "lazy loading",
+            "connection pooling",
+            "exception rollback",
+            "query construction",
+        ],
+        tools=[
+            "AsyncSession",
+            "select()",
+            "asyncmy",
+            "FastAPI Depends",
+            "pytest-asyncio",
+            "SQLAlchemy 2.0",
+        ],
+        constraints=[
+            "avoiding leaked sessions",
+            "clear transaction boundaries",
+            "production database compatibility",
+            "repeatable tests",
+            "safe rollbacks",
+            "predictable lifecycle",
+        ],
+    ),
+    TopicSpec(
+        subject="designing a REST API with FastAPI",
+        components=[
+            "route handlers",
+            "service layer",
+            "Pydantic schemas",
+            "status codes",
+            "dependency injection",
+            "error responses",
+        ],
+        decisions=[
+            "request validation",
+            "response models",
+            "error mapping",
+            "pagination",
+            "authentication checks",
+            "route structure",
+        ],
+        tools=[
+            "FastAPI",
+            "Uvicorn",
+            "Pydantic v2",
+            "Swagger docs",
+            "TestClient",
+            "httpx",
+        ],
+        constraints=[
+            "consistent responses",
+            "clear validation errors",
+            "maintainable routes",
+            "test coverage",
+            "API versioning",
+            "client usability",
+        ],
+    ),
+    TopicSpec(
+        subject="creating a data validation schema with Pydantic",
+        components=[
+            "request models",
+            "response models",
+            "field validators",
+            "nested schemas",
+            "default values",
+            "serialization rules",
+        ],
+        decisions=[
+            "strict typing",
+            "model reuse",
+            "error messages",
+            "field constraints",
+            "schema boundaries",
+            "validation strategy",
+        ],
+        tools=[
+            "Pydantic v2",
+            "FastAPI",
+            "Annotated types",
+            "model validators",
+            "JSON schema",
+            "pytest",
+        ],
+        constraints=[
+            "clear validation failures",
+            "backwards compatibility",
+            "minimal duplication",
+            "strong typing",
+            "client-friendly errors",
+            "maintainable schemas",
+        ],
+    ),
+    TopicSpec(
+        subject="building a Flask app with Docker Compose",
+        components=[
+            "Flask routes",
+            "Dockerfile",
+            "Compose services",
+            "environment variables",
+            "volumes",
+            "database service",
+        ],
+        decisions=[
+            "container startup",
+            "service networking",
+            "volume persistence",
+            "debug configuration",
+            "local database setup",
+            "production parity",
+        ],
+        tools=[
+            "Flask",
+            "Docker",
+            "Docker Compose",
+            "Gunicorn",
+            "Redis",
+            "MySQL",
+        ],
+        constraints=[
+            "fast local setup",
+            "reproducible environments",
+            "clear logs",
+            "portable configuration",
+            "minimal image size",
+            "developer usability",
+        ],
+    ),
+    TopicSpec(
+        subject="working with DynamoDB in LocalStack",
+        components=[
+            "DynamoDB tables",
+            "partition keys",
+            "sort keys",
+            "boto3 clients",
+            "LocalStack endpoints",
+            "test fixtures",
+        ],
+        decisions=[
+            "table schema",
+            "access patterns",
+            "conditional writes",
+            "pagination",
+            "index choice",
+            "test isolation",
+        ],
+        tools=[
+            "DynamoDB",
+            "boto3",
+            "LocalStack",
+            "Docker Compose",
+            "pytest",
+            "AWS SDK",
+        ],
+        constraints=[
+            "no real AWS cost",
+            "repeatable tests",
+            "local-only credentials",
+            "fast startup",
+            "realistic AWS behavior",
+            "efficient queries",
+        ],
+    ),
+    TopicSpec(
+        subject="uploading and downloading from S3 with boto3",
+        components=[
+            "upload endpoint",
+            "download flow",
+            "object keys",
+            "bucket configuration",
+            "presigned URLs",
+            "file validation",
+        ],
+        decisions=[
+            "direct upload",
+            "server-side upload",
+            "object naming",
+            "access control",
+            "content type checks",
+            "metadata storage",
+        ],
+        tools=[
+            "S3",
+            "boto3",
+            "FastAPI UploadFile",
+            "LocalStack",
+            "presigned URLs",
+            "pytest",
+        ],
+        constraints=[
+            "safe file types",
+            "large file support",
+            "private access",
+            "idempotent naming",
+            "test isolation",
+            "credential safety",
+        ],
+    ),
+    TopicSpec(
+        subject="storing sessions in Redis",
+        components=[
+            "session data",
+            "Redis keys",
+            "TTL values",
+            "serialization",
+            "cache invalidation",
+            "login flow",
+        ],
+        decisions=[
+            "session expiry",
+            "key naming",
+            "cache-aside flow",
+            "fallback behavior",
+            "session security",
+            "data shape",
+        ],
+        tools=[
+            "Redis",
+            "FastAPI",
+            "Docker Compose",
+            "redis-py",
+            "pytest",
+            "JWT",
+        ],
+        constraints=[
+            "avoiding stale data",
+            "low latency",
+            "safe session handling",
+            "simple invalidation",
+            "local development support",
+            "predictable expiry",
+        ],
+    ),
+    TopicSpec(
+        subject="debugging a failing pytest test",
+        components=[
+            "test function",
+            "fixture setup",
+            "assertion failure",
+            "mocked dependency",
+            "test database",
+            "environment variable",
+        ],
+        decisions=[
+            "fixture scope",
+            "mocking strategy",
+            "test isolation",
+            "assertion style",
+            "database cleanup",
+            "test ordering",
+        ],
+        tools=[
+            "pytest",
+            "pytest-asyncio",
+            "monkeypatch",
+            "TestClient",
+            "coverage",
+            "tmp_path",
+        ],
+        constraints=[
+            "repeatable tests",
+            "fast feedback",
+            "isolated state",
+            "clear failure messages",
+            "CI compatibility",
+            "minimal flakiness",
+        ],
+    ),
+    TopicSpec(
+        subject="preparing a JSONL dataset for SFT training",
+        components=[
+            "chat messages",
+            "assistant outputs",
+            "metadata fields",
+            "train split",
+            "validation split",
+            "format validator",
+        ],
+        decisions=[
+            "message format",
+            "max length",
+            "temperature fields",
+            "duplicate handling",
+            "quality filtering",
+            "topic coverage",
+        ],
+        tools=[
+            "JSONL",
+            "Python scripts",
+            "Hugging Face datasets",
+            "tokenizer",
+            "validation checks",
+            "Transformers",
+        ],
+        constraints=[
+            "valid JSON per line",
+            "strict output format",
+            "low duplication",
+            "topic variety",
+            "consistent roles",
+            "reproducibility",
+        ],
+    ),
+    TopicSpec(
+        subject="fine-tuning a small language model locally",
+        components=[
+            "base model",
+            "training dataset",
+            "tokenizer",
+            "training loop",
+            "checkpoint output",
+            "generation settings",
+        ],
+        decisions=[
+            "learning rate",
+            "number of epochs",
+            "batch size",
+            "save strategy",
+            "evaluation sample",
+            "CPU versus GPU usage",
+        ],
+        tools=[
+            "Transformers",
+            "Trainer",
+            "PyTorch",
+            "Hugging Face",
+            "safetensors",
+            "tokenizer",
+        ],
+        constraints=[
+            "limited disk space",
+            "CPU or GPU availability",
+            "stable loss",
+            "valid checkpoints",
+            "reproducibility",
+            "low memory usage",
+        ],
+    ),
+    TopicSpec(
+        subject="writing a clean README for a GitHub project",
+        components=[
+            "project overview",
+            "quickstart section",
+            "installation steps",
+            "usage examples",
+            "environment variables",
+            "project structure",
+        ],
+        decisions=[
+            "target audience",
+            "setup instructions",
+            "example commands",
+            "screenshots",
+            "API documentation",
+            "known limitations",
+        ],
+        tools=[
+            "Markdown",
+            "GitHub",
+            "README",
+            "terminal commands",
+            "badges",
+            "code blocks",
+        ],
+        constraints=[
+            "clear onboarding",
+            "recruiter readability",
+            "developer usability",
+            "accurate commands",
+            "concise writing",
+            "maintainability",
+        ],
+    ),
+    TopicSpec(
+        subject="setting up a pyproject.toml for a Python package",
+        components=[
+            "package metadata",
+            "dependencies",
+            "dev dependencies",
+            "console scripts",
+            "build backend",
+            "tool configuration",
+        ],
+        decisions=[
+            "package name",
+            "Python version support",
+            "dependency groups",
+            "CLI entry points",
+            "linting rules",
+            "test configuration",
+        ],
+        tools=[
+            "pyproject.toml",
+            "setuptools",
+            "hatchling",
+            "ruff",
+            "pytest",
+            "mypy",
+        ],
+        constraints=[
+            "src layout compatibility",
+            "reproducible installs",
+            "minimal dependencies",
+            "clear CLI commands",
+            "tool consistency",
+            "packaging correctness",
+        ],
+    ),
+    TopicSpec(
+        subject="writing a CLI tool with argparse",
+        components=[
+            "argument parser",
+            "subcommands",
+            "flags",
+            "output formatting",
+            "exit codes",
+            "error handling",
+        ],
+        decisions=[
+            "command structure",
+            "required arguments",
+            "default values",
+            "JSON output",
+            "help text",
+            "validation",
+        ],
+        tools=[
+            "argparse",
+            "Path",
+            "json",
+            "stdout",
+            "stderr",
+            "PowerShell",
+        ],
+        constraints=[
+            "clear UX",
+            "scriptability",
+            "useful errors",
+            "cross-platform paths",
+            "stable output",
+            "minimal dependencies",
+        ],
+    ),
+]
+
+
+PROMPT_TEMPLATES: list[str] = [
+    "Ask me {k} clarifying questions so you can help with {subject}.",
+    "Write {k} varied follow-up questions that are specific to {subject}.",
+    "Before answering, ask me {k} follow-up questions about {subject}.",
+    "Generate {k} concise clarification questions for a developer working on {subject}.",
+    "Give me {k} follow-up questions to understand my requirements for {subject}.",
+    "Ask {k} technical questions that would clarify a task about {subject}.",
+    "Create {k} useful follow-up questions for planning {subject}.",
+    "What are {k} follow-up questions you would ask about {subject}?",
+    "Ask {k} concrete questions that would make your help with {subject} more accurate.",
+    "Generate {k} specific follow-up questions about {subject}, not generic ones.",
+]
+
+
+QUESTION_TEMPLATES: list[str] = [
+    "Which {component} is the main source of uncertainty in your current design?",
+    "Are you trying to optimize {decision} for {constraint}, or is another priority more important?",
+    "What {tool} setup are you using, and is it already working locally?",
+    "Should the solution prioritize {constraint}, {constraint2}, or ease of implementation?",
+    "Where in the flow does {component} currently fit?",
+    "What behavior do you expect from {component} when an error occurs?",
+    "Do you already have tests covering {decision}, or should testing be part of the design?",
+    "Which part needs the most help: {component}, {component2}, or {component3}?",
+    "Is the goal to explain the concept, implement it, debug it, or improve an existing version?",
+    "What does the current implementation do, and what behavior do you want instead?",
+    "Are there compatibility requirements around {tool}, {tool2}, or {tool3}?",
+    "Should the design be optimized for local development, production deployment, or automated tests?",
+    "What input data, API request, or example case should the solution handle first?",
+    "How should failures be surfaced to the caller: exceptions, status codes, logs, or structured errors?",
+    "Which trade-off matters most here: simplicity, performance, reliability, or maintainability?",
+    "Are you building this from scratch, refactoring existing code, or adding it to a working project?",
+    "What constraints do you have around {constraint}, {constraint2}, or {constraint3}?",
+    "Should the answer include code, architecture guidance, test strategy, or troubleshooting steps?",
+    "What part of {subject} needs to be decided before implementation can start?",
+    "How will you know the {component} implementation is correct?",
+    "Which {decision} choice are you leaning toward, and why?",
+    "What failure case should the design handle before everything else?",
+    "Do you want the answer to focus on implementation, testing, debugging, or architecture?",
+    "What existing code or folder structure does this need to fit into?",
+    "Should the solution be minimal for learning or robust enough for production-style use?",
+]
+
+
+# ----------------------------
+# Generation helpers
+# ----------------------------
+
+def unique_sample(items: list[str], count: int) -> list[str]:
+    unique_items = list(dict.fromkeys(items))
+    if len(unique_items) >= count:
+        return random.sample(unique_items, count)
+    return unique_items
+
+
+def force_question(text: str) -> str:
+    text = " ".join(text.strip().split())
+    text = text.rstrip(".?!")
+    return f"{text}?"
+
+
+def render_question(template: str, topic: TopicSpec) -> str:
+    components = unique_sample(topic.components, 3)
+    decisions = unique_sample(topic.decisions, 3)
+    tools = unique_sample(topic.tools, 3)
+    constraints = unique_sample(topic.constraints, 3)
+
+    def get(values: list[str], index: int) -> str:
+        return values[index] if index < len(values) else values[0]
+
+    question = template.format(
+        subject=topic.subject,
+        component=get(components, 0),
+        component2=get(components, 1),
+        component3=get(components, 2),
+        decision=get(decisions, 0),
+        decision2=get(decisions, 1),
+        decision3=get(decisions, 2),
+        tool=get(tools, 0),
+        tool2=get(tools, 1),
+        tool3=get(tools, 2),
+        constraint=get(constraints, 0),
+        constraint2=get(constraints, 1),
+        constraint3=get(constraints, 2),
+    )
+
+    return force_question(question)
+
+
+def make_prompt(topic: TopicSpec, k: int, index: int) -> str:
+    template = random.choice(PROMPT_TEMPLATES)
+    prompt = template.format(k=k, subject=topic.subject)
+
+    # Add occasional focus area to reduce duplicate prompts.
+    if index % 3 == 0:
+        focus = random.choice(topic.components)
+        prompt = f"{prompt} Focus on {focus}."
+
+    return prompt
+
+
+def make_response(
+    topic: TopicSpec,
+    k: int,
+    question_counts: Counter[str],
+    max_question_repeat: int,
+) -> str | None:
+    random_templates = random.sample(QUESTION_TEMPLATES, len(QUESTION_TEMPLATES))
+
+    lines: list[str] = []
+    used_questions: set[str] = set()
+
+    for template in random_templates:
+        question = render_question(template, topic)
+
+        if question in used_questions:
+            continue
+
+        bullet_line = f"- {question}"
+
+        if question_counts[bullet_line] >= max_question_repeat:
+            continue
+
+        lines.append(bullet_line)
+        used_questions.add(question)
+
+        if len(lines) == k:
+            break
+
+    if len(lines) != k:
+        return None
+
+    return "\n".join(lines)
+
+
+def make_example(
+    topic: TopicSpec,
+    k: int,
+    index: int,
+    question_counts: Counter[str],
+    max_question_repeat: int,
+    max_new_tokens: int,
+    temperature: float,
+    top_p: float,
+) -> dict[str, Any] | None:
+    prompt = make_prompt(topic=topic, k=k, index=index)
+    response = make_response(
+        topic=topic,
+        k=k,
+        question_counts=question_counts,
+        max_question_repeat=max_question_repeat,
+    )
+
+    if response is None:
+        return None
+
+    for line in response.split("\n"):
+        question_counts[line] += 1
+
     return {
         "messages": [
-            {"role": "user", "content": user_prompt},
-            {"role": "assistant", "content": assistant_bullets.rstrip()},
+            {"role": "user", "content": prompt},
+            {"role": "assistant", "content": response},
         ],
-        "max_new_tokens": row_cfg.max_new_tokens,
-        "temperature": row_cfg.temperature,
-        "top_p": row_cfg.top_p,
+        "max_new_tokens": max_new_tokens,
+        "temperature": temperature,
+        "top_p": top_p,
     }
 
 
-def write_jsonl(rows: Iterable[dict], out_path: Path) -> None:
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    with out_path.open("w", encoding="utf-8") as f:
-        for row in rows:
-            f.write(json.dumps(row, ensure_ascii=False) + "\n")
+def validate_examples(examples: list[dict[str, Any]], k: int) -> dict[str, Any]:
+    strict_failures = 0
+    question_lines: list[str] = []
+    response_blocks: list[str] = []
+    prompts: list[str] = []
+
+    for example in examples:
+        messages = example.get("messages", [])
+
+        if len(messages) != 2:
+            strict_failures += 1
+            continue
+
+        user = messages[0]
+        assistant = messages[1]
+
+        prompts.append(user.get("content", ""))
+        response = assistant.get("content", "")
+        response_blocks.append(response)
+
+        lines = response.split("\n")
+        ok = (
+            len(lines) == k
+            and all(line.startswith("- ") for line in lines)
+            and all(line.endswith("?") for line in lines)
+        )
+
+        if not ok:
+            strict_failures += 1
+
+        question_lines.extend(lines)
+
+    return {
+        "examples": len(examples),
+        "strict_format_failures": strict_failures,
+        "unique_question_lines": len(set(question_lines)),
+        "total_question_lines": len(question_lines),
+        "unique_responses": len(set(response_blocks)),
+        "total_responses": len(response_blocks),
+        "unique_prompts": len(set(prompts)),
+        "total_prompts": len(prompts),
+        "top_repeated_questions": Counter(question_lines).most_common(15),
+    }
 
 
-def validate_rows(rows: Sequence[dict], *, k: int, min_chars: int) -> None:
-    """
-    Quick local validation so you catch bad formatting early.
-    This is not your full pytest validator, but it matches the key constraints.
-    """
-    for i, row in enumerate(rows, 1):
-        msgs = row.get("messages", [])
-        if not isinstance(msgs, list) or len(msgs) < 2:
-            raise ValueError(f"Row {i}: invalid messages list")
+def write_jsonl(path: Path, examples: list[dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
 
-        assistant = msgs[-1].get("content", "")
-        if not isinstance(assistant, str) or not assistant.strip():
-            raise ValueError(f"Row {i}: empty assistant content")
+    with path.open("w", encoding="utf-8", newline="\n") as f:
+        for example in examples:
+            f.write(json.dumps(example, ensure_ascii=False) + "\n")
 
-        lines = [ln.strip() for ln in assistant.splitlines() if ln.strip()]
-        if len(lines) != k:
-            raise ValueError(f"Row {i}: expected exactly {k} bullet lines, got {len(lines)}")
 
-        for ln in lines:
-            if not _is_valid_bullet_line(ln, min_chars=min_chars):
-                raise ValueError(f"Row {i}: invalid bullet line: {ln!r}")
+def write_report(path: Path, stats: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    lines = [
+        "SFT dataset validation report",
+        "=" * 40,
+        f"Examples: {stats['examples']}",
+        f"Strict format failures: {stats['strict_format_failures']}",
+        f"Unique question lines: {stats['unique_question_lines']} / {stats['total_question_lines']}",
+        f"Unique assistant responses: {stats['unique_responses']} / {stats['total_responses']}",
+        f"Unique prompts: {stats['unique_prompts']} / {stats['total_prompts']}",
+        "",
+        "Top repeated question lines:",
+    ]
+
+    for question, count in stats["top_repeated_questions"]:
+        lines.append(f"{count:>4}  {question}")
+
+    path.write_text("\n".join(lines), encoding="utf-8")
+
+
+def generate_dataset(
+    n: int,
+    k: int,
+    seed: int,
+    max_question_repeat: int,
+    max_new_tokens: int,
+    temperature: float,
+    top_p: float,
+) -> list[dict[str, Any]]:
+    random.seed(seed)
+
+    examples: list[dict[str, Any]] = []
+    question_counts: Counter[str] = Counter()
+    seen_response_blocks: set[str] = set()
+
+    attempts = 0
+    max_attempts = n * 20
+
+    while len(examples) < n and attempts < max_attempts:
+        attempts += 1
+
+        topic = random.choice(DEFAULT_TOPICS)
+
+        example = make_example(
+            topic=topic,
+            k=k,
+            index=len(examples),
+            question_counts=question_counts,
+            max_question_repeat=max_question_repeat,
+            max_new_tokens=max_new_tokens,
+            temperature=temperature,
+            top_p=top_p,
+        )
+
+        if example is None:
+            continue
+
+        response = example["messages"][1]["content"]
+        if response in seen_response_blocks:
+            continue
+
+        seen_response_blocks.add(response)
+        examples.append(example)
+
+    if len(examples) < n:
+        raise RuntimeError(
+            f"Could only generate {len(examples)} examples after {attempts} attempts. "
+            "Increase --max-question-repeat or reduce --n."
+        )
+
+    return examples
+
+
+def split_train_eval(
+    examples: list[dict[str, Any]],
+    eval_size: int,
+    seed: int,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    copied = list(examples)
+    random.Random(seed).shuffle(copied)
+
+    eval_examples = copied[:eval_size]
+    train_examples = copied[eval_size:]
+
+    return train_examples, eval_examples
 
 
 # ----------------------------
-# Main
+# CLI
 # ----------------------------
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Generate a diverse JSONL SFT dataset for follow-up question generation."
+    )
+
+    parser.add_argument("--out", type=Path, default=Path("data/sft_followups.jsonl"))
+    parser.add_argument("--report-out", type=Path, default=Path("data/sft_followups_report.txt"))
+
+    parser.add_argument("--train-out", type=Path, default=None)
+    parser.add_argument("--eval-out", type=Path, default=None)
+    parser.add_argument("--eval-size", type=int, default=0)
+
+    parser.add_argument("--n", type=int, default=2000)
+    parser.add_argument("--k", type=int, default=3)
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--max-question-repeat", type=int, default=30)
+
+    parser.add_argument("--max-new-tokens", type=int, default=128)
+    parser.add_argument("--temperature", type=float, default=0.2)
+    parser.add_argument("--top-p", type=float, default=0.9)
+
+    return parser.parse_args()
+
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Generate SFT JSONL for follow-up bullet questions.")
-    ap.add_argument("--out", type=Path, default=Path("data/sft_followups.jsonl"), help="Output JSONL path.")
-    ap.add_argument("--n", type=int, default=300, help="Number of examples to generate.")
-    ap.add_argument("--k", type=int, default=3, help="Number of follow-up questions per example.")
-    ap.add_argument("--seed", type=int, default=42, help="RNG seed for deterministic generation.")
-    ap.add_argument("--topics", type=Path, default=None, help="Optional path to newline-delimited topics.txt")
-    ap.add_argument("--min-chars", type=int, default=18, help="Minimum characters per question (excluding '?').")
+    args = parse_args()
 
-    # Row-level inference defaults (kept constant across rows)
-    ap.add_argument("--max-new-tokens", type=int, default=128)
-    ap.add_argument("--temperature", type=float, default=0.2)
-    ap.add_argument("--top-p", type=float, default=0.9)
+    if args.eval_size < 0:
+        raise SystemExit("--eval-size cannot be negative")
 
-    args = ap.parse_args()
+    if args.eval_size >= args.n:
+        raise SystemExit("--eval-size must be smaller than --n")
 
-    if args.n < 1:
-        raise SystemExit("--n must be >= 1")
-    if args.k < 3:
-        raise SystemExit("--k should be >= 3 to satisfy your validator")
-    if args.min_chars < 8:
-        raise SystemExit("--min-chars is too small; keep it >= 8")
-
-    rng = random.Random(args.seed)
-
-    if args.topics:
-        if not args.topics.exists():
-            raise SystemExit(f"Topics file not found: {args.topics}")
-        topics = _read_topics_file(args.topics)
-        if not topics:
-            raise SystemExit(f"No usable topics found in: {args.topics}")
-    else:
-        topics = DEFAULT_TOPICS[:]
-
-    row_cfg = RowConfig(
+    examples = generate_dataset(
+        n=args.n,
+        k=args.k,
+        seed=args.seed,
+        max_question_repeat=args.max_question_repeat,
         max_new_tokens=args.max_new_tokens,
         temperature=args.temperature,
         top_p=args.top_p,
     )
 
-    rows: list[dict] = []
-    for _ in range(args.n):
-        topic = rng.choice(topics)
-        prompt_tmpl = rng.choice(PROMPT_TEMPLATES)
-        user_prompt = prompt_tmpl.format(k=args.k, topic=topic)
+    stats = validate_examples(examples, k=args.k)
 
-        qs = _generate_questions(rng, topic, args.k, min_chars=args.min_chars)
-        bullets = _format_bullets(qs)
+    if stats["strict_format_failures"] != 0:
+        raise SystemExit(
+            f"Generated dataset has {stats['strict_format_failures']} strict format failures."
+        )
 
-        rows.append(build_row(user_prompt=user_prompt, assistant_bullets=bullets, row_cfg=row_cfg))
+    if args.train_out is not None or args.eval_out is not None or args.eval_size > 0:
+        if args.train_out is None or args.eval_out is None:
+            raise SystemExit("Use --train-out and --eval-out together when splitting.")
 
-    # Sanity-check before writing
-    validate_rows(rows, k=args.k, min_chars=args.min_chars)
+        train_examples, eval_examples = split_train_eval(
+            examples=examples,
+            eval_size=args.eval_size,
+            seed=args.seed,
+        )
 
-    write_jsonl(rows, args.out)
-    print(f"Wrote {len(rows)} rows to: {args.out.resolve()}")
+        write_jsonl(args.train_out, train_examples)
+        write_jsonl(args.eval_out, eval_examples)
+
+        print(f"Wrote train dataset: {args.train_out} ({len(train_examples)} examples)")
+        print(f"Wrote eval dataset:  {args.eval_out} ({len(eval_examples)} examples)")
+
+    else:
+        write_jsonl(args.out, examples)
+        print(f"Wrote dataset: {args.out} ({len(examples)} examples)")
+
+    write_report(args.report_out, stats)
+    print(f"Wrote report:  {args.report_out}")
+
+    print()
+    print("Validation summary:")
+    print(f"Examples: {stats['examples']}")
+    print(f"Strict format failures: {stats['strict_format_failures']}")
+    print(f"Unique question lines: {stats['unique_question_lines']} / {stats['total_question_lines']}")
+    print(f"Unique assistant responses: {stats['unique_responses']} / {stats['total_responses']}")
+    print(f"Unique prompts: {stats['unique_prompts']} / {stats['total_prompts']}")
+
     return 0
 
 

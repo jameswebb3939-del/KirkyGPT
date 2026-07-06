@@ -1,363 +1,328 @@
-#!/usr/bin/env python3
-"""
-make_sft.py
-
-Generate a JSONL dataset for "follow-up questions" SFT.
-
-Each JSONL line is a single training example shaped like:
-{
-  "messages": [
-    {"role": "user", "content": "..."},
-    {"role": "assistant", "content": "- ...?\n- ...?\n- ...?"}
-  ],
-  "max_new_tokens": 128,
-  "temperature": 0.2,
-  "top_p": 0.9
-}
-
-Goals:
-- Assistant output is *only* bullet questions (no extra text)
-- Bullets use "-" (hyphen) lines
-- Each line ends with "?"
-- No numbered lists
-- Questions are not "too short"
-- Deterministic output via --seed
-
-Usage:
-  PYTHONPATH=src python scripts/make_sft.py --out data/sft_followups.jsonl --n 300 --seed 42
-
-Optional:
-  PYTHONPATH=src python scripts/make_sft.py --topics data/topics.txt --out data/sft_followups.jsonl --n 500
-"""
-
 from __future__ import annotations
 
 import argparse
 import json
 import random
-from dataclasses import dataclass
+import re
+import time
 from pathlib import Path
-from typing import Iterable, List, Sequence
+from typing import Any
+
+import torch
+from transformers import AutoModelForCausalLM, AutoTokenizer
 
 
-# ----------------------------
-# Templates / content
-# ----------------------------
-
-DEFAULT_TOPICS: list[str] = [
-    "learning Python",
-    "debugging a failing pytest test",
-    "writing a clean README for a GitHub project",
-    "setting up a pyproject.toml for a Python package",
-    "understanding async/await in Python",
-    "designing a REST API with FastAPI",
-    "building a Flask app with Docker Compose",
-    "using SQLAlchemy 2.0 async sessions correctly",
-    "writing unit tests with pytest-asyncio",
-    "creating a data validation schema with Pydantic",
-    "preparing a JSONL dataset for SFT training",
-    "fine-tuning a small language model locally",
-    "improving code quality with Ruff and formatting tools",
-    "logging best practices in Python",
-    "structuring a Python project with src/ layout",
-    "handling environment variables with .env files",
-    "writing a CLI tool with argparse",
-    "working with DynamoDB in LocalStack",
-    "uploading and downloading from S3 with boto3",
-    "storing sessions in Redis",
-    "designing repository + unit-of-work patterns",
+DEFAULT_PROMPTS: list[str] = [
+    "Ask me 3 clarifying questions so you can help with designing repository + unit-of-work patterns.",
+    "Write 3 varied follow-up questions that are specific to using SQLAlchemy 2.0 async sessions correctly.",
+    "Before helping with FastAPI API design, ask me 3 useful clarifying questions.",
+    "Generate 3 specific follow-up questions about preparing a JSONL dataset for SFT training, not generic ones.",
+    "Ask me 3 concrete questions that would clarify my exact needs for debugging a failing pytest test.",
 ]
 
-PROMPT_TEMPLATES: list[str] = [
-    "Give me {k} follow-up questions about {topic}.",
-    "Ask me {k} clarifying questions so you can help with {topic}.",
-    "I need {k} follow-up questions that would improve my understanding of {topic}.",
-    "Generate {k} questions you would ask before starting work on {topic}.",
-    "Write {k} follow-up questions to gather requirements for {topic}.",
-    "What are {k} follow-up questions you would ask about {topic}?",
-]
 
-QUESTION_BANK: dict[str, list[str]] = {
-    # Generic / requirements
-    "generic": [
-        "What is your goal and how will you measure success for this?",
-        "What constraints do you have (time, tools, environment, or requirements)?",
-        "What have you tried already, and what happened when you tried it?",
-        "Can you share a minimal reproducible example or a small snippet to work from?",
-        "What does the expected output look like, and what is the actual output now?",
-        "Are there any non-negotiables (format, style, performance, or compatibility)?",
-    ],
-    # Python learning
-    "python": [
-        "What is your current Python level, and what topics do you find hardest right now?",
-        "Are you learning Python for scripting, data, backend, automation, or interviews?",
-        "Do you prefer learning by projects, exercises, or reading documentation first?",
-        "Which concepts are you focusing on next (functions, OOP, typing, async, testing)?",
-        "What is one small project you want to build to practise this topic?",
-    ],
-    # Testing / pytest
-    "pytest": [
-        "Which test file and test function is failing, and what is the full error output?",
-        "What fixtures are involved, and what scope do they use?",
-        "Are you running pytest with PYTHONPATH=src or using an installed package?",
-        "Do you rely on marks (unit/integration), and are those marks registered?",
-        "Is the failure deterministic, or does it depend on ordering or environment variables?",
-    ],
-    # README / docs
-    "readme": [
-        "Who is the target audience for this README (recruiters, teammates, or users)?",
-        "What is the simplest 'quickstart' command sequence a new user should run?",
-        "What environment variables or prerequisites do you need to document clearly?",
-        "What is the project structure and which entry points should a reader start with?",
-        "What examples should be included to demonstrate expected inputs and outputs?",
-    ],
-    # pyproject
-    "pyproject": [
-        "What is the package name and the import path under src/ (module name)?",
-        "Which Python versions do you want to support, and do you need 3.13 features?",
-        "What are the runtime dependencies versus dev dependencies (tests, lint, format)?",
-        "Do you want console scripts (CLI entry points), and what command name should they use?",
-        "Do you want strict typing checks and Ruff rules, or keep it minimal for now?",
-    ],
-    # Training / SFT
-    "sft": [
-        "What exact output format must the assistant follow (bullets only, min questions, question marks)?",
-        "Do you want the model to always ask clarifying questions, or sometimes answer and then ask?",
-        "What topics should the follow-up questions cover, and what topics should be excluded?",
-        "How many examples do you want to generate, and do you need train/valid splits?",
-        "Do you want deterministic generation (seeded) for reproducible datasets?",
-    ],
-}
+SYSTEM_PROMPT = """You generate follow-up questions.
+
+Rules:
+- Return exactly {k} follow-up questions.
+- Each question must be on its own line.
+- Every line must start with "- ".
+- Every line must end with "?".
+- Do not include any introduction, explanation, numbering, markdown heading, or summary.
+- The questions must be specific to the user's topic.
+"""
 
 
-# ----------------------------
-# Helpers
-# ----------------------------
+def set_seed(seed: int) -> None:
+    random.seed(seed)
+    torch.manual_seed(seed)
 
-def _read_topics_file(path: Path) -> list[str]:
-    topics: list[str] = []
-    for raw in path.read_text(encoding="utf-8").splitlines():
-        line = raw.strip()
-        if not line or line.startswith("#"):
-            continue
-        topics.append(line)
-    return topics
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
 
 
-def _choose_question_pool(topic: str) -> list[str]:
-    t = topic.lower()
-    pools: list[list[str]] = [QUESTION_BANK["generic"]]
+def load_prompts(path: Path | None) -> list[str]:
+    if path is None:
+        return DEFAULT_PROMPTS
 
-    if "pytest" in t or "test" in t:
-        pools.append(QUESTION_BANK["pytest"])
-    if "readme" in t or "documentation" in t or "github" in t:
-        pools.append(QUESTION_BANK["readme"])
-    if "pyproject" in t or "toml" in t or "packag" in t:
-        pools.append(QUESTION_BANK["pyproject"])
-    if "sft" in t or "jsonl" in t or "fine-tun" in t or "tuning" in t or "train" in t:
-        pools.append(QUESTION_BANK["sft"])
-    if "python" in t:
-        pools.append(QUESTION_BANK["python"])
+    prompts: list[str] = []
 
-    # Flatten unique while preserving order
-    seen = set()
-    flat: list[str] = []
-    for pool in pools:
-        for q in pool:
-            if q not in seen:
-                seen.add(q)
-                flat.append(q)
-    return flat
+    with path.open("r", encoding="utf-8") as f:
+        for line in f:
+            text = line.strip()
 
+            if not text:
+                continue
 
-def _is_valid_bullet_line(line: str, *, min_chars: int) -> bool:
-    # Must start with "- "
-    if not line.startswith("- "):
-        return False
-    body = line[2:].strip()
+            # Supports either plain text lines or JSONL with messages.
+            if text.startswith("{"):
+                obj = json.loads(text)
+                messages = obj.get("messages", [])
 
-    # Must end with '?'
-    if not body.endswith("?"):
-        return False
+                if messages:
+                    prompts.append(messages[0]["content"])
+                else:
+                    prompts.append(obj.get("prompt", ""))
+            else:
+                prompts.append(text)
 
-    # Must not look like numbered lists
-    # (We don't allow "1. " anywhere)
-    if body.lstrip().startswith(tuple(f"{i}." for i in range(1, 10))):
-        return False
-
-    # Must be long enough to avoid your validator "Too short"
-    # Count characters excluding trailing '?'
-    core = body[:-1].strip()
-    return len(core) >= min_chars
+    return [p for p in prompts if p]
 
 
-def _format_bullets(questions: Sequence[str]) -> str:
-    lines = [f"- {q.strip()}" for q in questions]
-    return "\n".join(lines).strip() + "\n"
+def build_chat_prompt(tokenizer: Any, user_prompt: str, k: int) -> str:
+    messages = [
+        {
+            "role": "system",
+            "content": SYSTEM_PROMPT.format(k=k),
+        },
+        {
+            "role": "user",
+            "content": user_prompt,
+        },
+    ]
 
+    if getattr(tokenizer, "chat_template", None):
+        return tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=True,
+        )
 
-def _ensure_question_marks(questions: Sequence[str]) -> list[str]:
-    out: list[str] = []
-    for q in questions:
-        s = q.strip()
-        if not s.endswith("?"):
-            s = s.rstrip(".") + "?"
-        out.append(s)
-    return out
-
-
-def _generate_questions(rng: random.Random, topic: str, k: int, *, min_chars: int) -> list[str]:
-    pool = _choose_question_pool(topic)
-    # Shuffle-copy
-    candidates = pool[:]
-    rng.shuffle(candidates)
-
-    picked: list[str] = []
-    for q in candidates:
-        if len(picked) >= k:
-            break
-        # Minor topic injection: occasionally customise a generic question
-        if "this" in q and rng.random() < 0.35:
-            q2 = q.replace("this", topic)
-        else:
-            q2 = q
-        picked.append(q2)
-
-    # If pool smaller than k (unlikely), fill with safe generics
-    while len(picked) < k:
-        picked.append(rng.choice(QUESTION_BANK["generic"]))
-
-    picked = _ensure_question_marks(picked)
-
-    # Validate and, if needed, repair by swapping in longer generics
-    repaired: list[str] = []
-    for q in picked:
-        # Ensure minimum length
-        core = q[:-1].strip() if q.endswith("?") else q.strip()
-        if len(core) < min_chars:
-            # Replace with a longer generic that passes min_chars
-            replacement = None
-            for cand in QUESTION_BANK["generic"]:
-                cand_q = _ensure_question_marks([cand])[0]
-                cand_core = cand_q[:-1].strip()
-                if len(cand_core) >= min_chars:
-                    replacement = cand_q
-                    break
-            q = replacement or (core + " (please share more details)?")
-        repaired.append(q)
-
-    return repaired
-
-
-@dataclass(frozen=True)
-class RowConfig:
-    max_new_tokens: int = 128
-    temperature: float = 0.2
-    top_p: float = 0.9
-
-
-def build_row(*, user_prompt: str, assistant_bullets: str, row_cfg: RowConfig) -> dict:
-    return {
-        "messages": [
-            {"role": "user", "content": user_prompt},
-            {"role": "assistant", "content": assistant_bullets.rstrip()},
-        ],
-        "max_new_tokens": row_cfg.max_new_tokens,
-        "temperature": row_cfg.temperature,
-        "top_p": row_cfg.top_p,
-    }
-
-
-def write_jsonl(rows: Iterable[dict], out_path: Path) -> None:
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    with out_path.open("w", encoding="utf-8") as f:
-        for row in rows:
-            f.write(json.dumps(row, ensure_ascii=False) + "\n")
-
-
-def validate_rows(rows: Sequence[dict], *, k: int, min_chars: int) -> None:
-    """
-    Quick local validation so you catch bad formatting early.
-    This is not your full pytest validator, but it matches the key constraints.
-    """
-    for i, row in enumerate(rows, 1):
-        msgs = row.get("messages", [])
-        if not isinstance(msgs, list) or len(msgs) < 2:
-            raise ValueError(f"Row {i}: invalid messages list")
-
-        assistant = msgs[-1].get("content", "")
-        if not isinstance(assistant, str) or not assistant.strip():
-            raise ValueError(f"Row {i}: empty assistant content")
-
-        lines = [ln.strip() for ln in assistant.splitlines() if ln.strip()]
-        if len(lines) != k:
-            raise ValueError(f"Row {i}: expected exactly {k} bullet lines, got {len(lines)}")
-
-        for ln in lines:
-            if not _is_valid_bullet_line(ln, min_chars=min_chars):
-                raise ValueError(f"Row {i}: invalid bullet line: {ln!r}")
-
-
-# ----------------------------
-# Main
-# ----------------------------
-
-def main() -> int:
-    ap = argparse.ArgumentParser(description="Generate SFT JSONL for follow-up bullet questions.")
-    ap.add_argument("--out", type=Path, default=Path("data/sft_followups.jsonl"), help="Output JSONL path.")
-    ap.add_argument("--n", type=int, default=300, help="Number of examples to generate.")
-    ap.add_argument("--k", type=int, default=3, help="Number of follow-up questions per example.")
-    ap.add_argument("--seed", type=int, default=42, help="RNG seed for deterministic generation.")
-    ap.add_argument("--topics", type=Path, default=None, help="Optional path to newline-delimited topics.txt")
-    ap.add_argument("--min-chars", type=int, default=18, help="Minimum characters per question (excluding '?').")
-
-    # Row-level inference defaults (kept constant across rows)
-    ap.add_argument("--max-new-tokens", type=int, default=128)
-    ap.add_argument("--temperature", type=float, default=0.2)
-    ap.add_argument("--top-p", type=float, default=0.9)
-
-    args = ap.parse_args()
-
-    if args.n < 1:
-        raise SystemExit("--n must be >= 1")
-    if args.k < 3:
-        raise SystemExit("--k should be >= 3 to satisfy your validator")
-    if args.min_chars < 8:
-        raise SystemExit("--min-chars is too small; keep it >= 8")
-
-    rng = random.Random(args.seed)
-
-    if args.topics:
-        if not args.topics.exists():
-            raise SystemExit(f"Topics file not found: {args.topics}")
-        topics = _read_topics_file(args.topics)
-        if not topics:
-            raise SystemExit(f"No usable topics found in: {args.topics}")
-    else:
-        topics = DEFAULT_TOPICS[:]
-
-    row_cfg = RowConfig(
-        max_new_tokens=args.max_new_tokens,
-        temperature=args.temperature,
-        top_p=args.top_p,
+    return (
+        f"System:\n{SYSTEM_PROMPT.format(k=k)}\n\n"
+        f"User:\n{user_prompt}\n\n"
+        f"Assistant:\n"
     )
 
-    rows: list[dict] = []
-    for _ in range(args.n):
-        topic = rng.choice(topics)
-        prompt_tmpl = rng.choice(PROMPT_TEMPLATES)
-        user_prompt = prompt_tmpl.format(k=args.k, topic=topic)
 
-        qs = _generate_questions(rng, topic, args.k, min_chars=args.min_chars)
-        bullets = _format_bullets(qs)
+def validate_strict_format(text: str, k: int) -> tuple[bool, list[str]]:
+    errors: list[str] = []
 
-        rows.append(build_row(user_prompt=user_prompt, assistant_bullets=bullets, row_cfg=row_cfg))
+    lines = text.strip().splitlines()
 
-    # Sanity-check before writing
-    validate_rows(rows, k=args.k, min_chars=args.min_chars)
+    if len(lines) != k:
+        errors.append(f"Expected exactly {k} lines, got {len(lines)}.")
 
-    write_jsonl(rows, args.out)
-    print(f"Wrote {len(rows)} rows to: {args.out.resolve()}")
+    for index, line in enumerate(lines, start=1):
+        clean_line = line.strip()
+
+        if not clean_line.startswith("- "):
+            errors.append(f"Line {index} does not start with '- '.")
+
+        if not clean_line.endswith("?"):
+            errors.append(f"Line {index} does not end with '?'.")
+
+        if re.match(r"^\s*\d+[\).\s]", line):
+            errors.append(f"Line {index} appears to use numbering.")
+
+        if len(line.strip()) < 10:
+            errors.append(f"Line {index} is too short.")
+
+    return len(errors) == 0, errors
+
+
+def load_model(model_path: Path, device: str):
+    tokenizer = AutoTokenizer.from_pretrained(
+        model_path,
+        local_files_only=True,
+        trust_remote_code=True,
+    )
+
+    if tokenizer.pad_token_id is None:
+        tokenizer.pad_token = tokenizer.eos_token
+
+    resolved_device = device
+
+    if device == "auto":
+        resolved_device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    dtype = torch.float16 if resolved_device == "cuda" else torch.float32
+
+    model = AutoModelForCausalLM.from_pretrained(
+        model_path,
+        local_files_only=True,
+        trust_remote_code=True,
+        torch_dtype=dtype,
+    )
+
+    model.config.pad_token_id = tokenizer.pad_token_id
+
+    if model.generation_config is not None:
+        model.generation_config.pad_token_id = tokenizer.pad_token_id
+
+    model.to(resolved_device)
+    model.eval()
+
+    return tokenizer, model, resolved_device
+
+
+def generate_once(
+    tokenizer: Any,
+    model: Any,
+    device: str,
+    user_prompt: str,
+    k: int,
+    max_new_tokens: int,
+    temperature: float,
+    top_p: float,
+    do_sample: bool,
+) -> tuple[str, float]:
+    prompt_text = build_chat_prompt(tokenizer=tokenizer, user_prompt=user_prompt, k=k)
+
+    inputs = tokenizer(
+        prompt_text,
+        return_tensors="pt",
+        padding=False,
+        truncation=True,
+    )
+
+    inputs = {name: value.to(device) for name, value in inputs.items()}
+
+    generation_kwargs: dict[str, Any] = {
+        "max_new_tokens": max_new_tokens,
+        "min_new_tokens": 45,
+        "pad_token_id": tokenizer.pad_token_id,
+        "eos_token_id": tokenizer.eos_token_id,
+        "do_sample": do_sample,
+        "repetition_penalty": 1.1,
+        "no_repeat_ngram_size": 3,
+    }
+
+    if do_sample:
+        generation_kwargs["temperature"] = temperature
+        generation_kwargs["top_p"] = top_p
+
+    start = time.perf_counter()
+
+    with torch.inference_mode():
+        output_ids = model.generate(
+            **inputs,
+            **generation_kwargs,
+        )
+
+    latency_ms = (time.perf_counter() - start) * 1000
+
+    prompt_length = inputs["input_ids"].shape[-1]
+    generated_ids = output_ids[0][prompt_length:]
+
+    text = tokenizer.decode(generated_ids, skip_special_tokens=True).strip()
+
+    return text, latency_ms
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Run sanity inference on a fine-tuned follow-up question model."
+    )
+
+    parser.add_argument(
+        "--model-path",
+        type=Path,
+        required=True,
+        help="Path to the trained model folder, e.g. outputs/llama5",
+    )
+
+    parser.add_argument(
+        "--prompts",
+        type=Path,
+        default=None,
+        help="Optional plain text or JSONL prompt file.",
+    )
+
+    parser.add_argument("--k", type=int, default=3)
+    parser.add_argument("--device", choices=["cpu", "auto"], default="cpu")
+    parser.add_argument("--max-new-tokens", type=int, default=128)
+    parser.add_argument("--temperature", type=float, default=0.2)
+    parser.add_argument("--top-p", type=float, default=0.9)
+    parser.add_argument("--seed", type=int, default=42)
+
+    parser.add_argument(
+        "--sample",
+        action="store_true",
+        help="Use sampling. Default is greedy decoding for more stable sanity checks.",
+    )
+
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Limit number of prompts tested.",
+    )
+
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
+
+    set_seed(args.seed)
+
+    prompts = load_prompts(args.prompts)
+
+    if args.limit is not None:
+        prompts = prompts[: args.limit]
+
+    print(f"Loading model from: {args.model_path}")
+    tokenizer, model, device = load_model(args.model_path, args.device)
+
+    print(f"Device: {device}")
+    print(f"Tokenizer vocab size: {len(tokenizer)}")
+    print(f"Model vocab size: {model.get_input_embeddings().weight.shape[0]}")
+    print(f"Pad token id: {tokenizer.pad_token_id}")
+    print(f"EOS token id: {tokenizer.eos_token_id}")
+    print()
+
+    valid_count = 0
+    total_latency = 0.0
+
+    for index, prompt in enumerate(prompts, start=1):
+        print("=" * 90)
+        print(f"Prompt {index}:")
+        print(prompt)
+        print()
+
+        raw_output, latency_ms = generate_once(
+            tokenizer=tokenizer,
+            model=model,
+            device=device,
+            user_prompt=prompt,
+            k=args.k,
+            max_new_tokens=args.max_new_tokens,
+            temperature=args.temperature,
+            top_p=args.top_p,
+            do_sample=args.sample,
+        )
+
+        is_valid, errors = validate_strict_format(raw_output, k=args.k)
+
+        if is_valid:
+            valid_count += 1
+
+        total_latency += latency_ms
+
+        print("Raw model output:")
+        print(raw_output)
+        print()
+        print(f"Strict format valid: {is_valid}")
+        print(f"Latency: {latency_ms:.1f} ms")
+
+        if errors:
+            print("Errors:")
+            for error in errors:
+                print(f"- {error}")
+
+        print()
+
+    total = len(prompts)
+    valid_pct = (valid_count / total * 100) if total else 0.0
+    avg_latency = (total_latency / total) if total else 0.0
+
+    print("=" * 90)
+    print("Summary")
+    print(f"Prompts tested: {total}")
+    print(f"Strict format valid: {valid_count}/{total} ({valid_pct:.1f}%)")
+    print(f"Average latency: {avg_latency:.1f} ms")
+
     return 0
 
 
