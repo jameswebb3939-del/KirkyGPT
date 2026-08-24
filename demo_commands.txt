@@ -1,19 +1,74 @@
-#Terminal 1
-cd ~/llm_followups
-source venv/bin/activate
-export PYTHONPATH=src (Windows: $env:PYTHONPATH="src")
-export MODEL_NAME=meta-llama/Llama-3.2-1B-Instruct (Windows: $env:MODEL_NAME="meta-llama/Llama-3.2-1B-Instruct")
-export DEVICE=cpu (Windows: $env:DEVICE="cpu")
+## 1 - Tests + Base Application
 
-[Login into huggingface cli
-hf auth login
+# Terminal 1
+cd C:\Users\shyam\ElementalConceptTrainingProgram5
+.\.venv\Scripts\Activate.ps1
+$env:PYTHONPATH="src"
+$env:MODEL_NAME="meta-llama/Llama-3.2-1B-Instruct"
+$env:DEVICE="auto"
+Remove-Item Env:MODEL_PATH -ErrorAction SilentlyContinue
+
+# Optional Hugging Face login
 hf auth whoami
-hf auth logout #when finished
-]
+# hf auth login
 
-python -m uvicorn llm_followups.server.main:app --reload
+python -m uvicorn llm_followups.server.main:app --host 127.0.0.1 --port 8000
 
-#Terminal 2
-export PYTHONPATH=src
+
+# Terminal 2
+cd C:\Users\shyam\ElementalConceptTrainingProgram5
+.\.venv\Scripts\Activate.ps1
+$env:PYTHONPATH="src"
+
+pytest -v
+
+Invoke-RestMethod http://127.0.0.1:8000/health
+
 python -m llm_followups.client.cli --once "Explain Docker containers"
+
 python -m llm_followups.client.cli
+
+
+## 2 - Fine-Tuned SFT v2
+
+# Terminal 1
+# Ctrl+C previous server
+
+$env:PYTHONPATH="src"
+$env:DEVICE="auto"
+$env:MODEL_PATH="outputs/llama7_v2"
+
+python -m uvicorn llm_followups.server.main:app --host 127.0.0.1 --port 8000
+
+
+# Terminal 2
+
+python scripts/sanity_infer.py `
+  --model-path outputs/llama7_v2 `
+  --device auto
+
+python -m llm_followups.client.cli --once "I'm implementing repository and Unit of Work patterns with SQLAlchemy."
+
+python -m llm_followups.client.cli --once "I'm debugging a failing pytest test involving an async fixture."
+
+python -m llm_followups.client.cli
+
+
+## 3 - Evaluation Demo
+
+$env:OPENAI_API_KEY="YOUR_KEY"
+
+python scripts/run_trulens_eval.py `
+  --data_path data/sft_followups_eval_v3.jsonl `
+  --output_dir eval_results/demo_v2_5 `
+  --model_path outputs/llama7_v2 `
+  --limit 5 `
+  --min_questions 3 `
+  --bullet_style either
+
+#Optional logging out of session
+hf auth logout
+
+Remove-Item Env:OPENAI_API_KEY -ErrorAction SilentlyContinue
+Remove-Item Env:HF_TOKEN -ErrorAction SilentlyContinue
+Remove-Item Env:HUGGING_FACE_HUB_TOKEN -ErrorAction SilentlyContinue
