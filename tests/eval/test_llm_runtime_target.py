@@ -4,8 +4,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from llm_followups.eval.core.models import EvalExample
-from llm_followups.eval.targets.llm_runtime import LLMRuntimeTarget
+from src.llm_followups.eval.core.models import EvalExample
+from src.llm_followups.eval.targets.llm_runtime import LLMRuntimeTarget
 
 
 class FakeRuntime:

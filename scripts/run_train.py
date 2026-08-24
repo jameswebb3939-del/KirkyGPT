@@ -7,7 +7,6 @@ from llm_followups.tuning.train import TrainConfig, train
 
 
 def main() -> int:
-    # POINT THIS at your JSONL file
     data_path = Path("data/sft_followups_train_v3.jsonl").resolve()
     if not data_path.exists():
         raise SystemExit(f"Dataset not found: {data_path}")
@@ -19,21 +18,24 @@ def main() -> int:
         shuffle=True,
         seed=42,
         max_length=512,
+        min_questions=3,
+        bullet_style="dash",
+        assistant_only_loss=True,
     )
 
     cfg = TrainConfig(
         model_name="meta-llama/Llama-3.2-1B-Instruct",
-        output_dir=Path("outputs") / "llama7",
+        output_dir=Path("outputs") / "llama7_v2",
         dataset=ds_cfg,
         lr=5e-6,
         batch_size=1,
         grad_accum_steps=1,
-        epochs=2.0,
-        save_steps=1000,
+        epochs=1.0,
+        save_steps=500,
         logging_steps=10,
         device="cuda",
         fp16=False,
-        bf16=False,
+        bf16=True,
     )
 
     out = train(cfg)
