@@ -20,10 +20,26 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
-from ..persistence.database import init_db
-from ..persistence.models import ConversationModel
+from ..cache.factory import (
+    build_conversation_cache,
+)
+from ..cache.null import (
+    NullConversationCache,
+)
+from ..cache.protocol import (
+    ConversationCache,
+)
 
-from .llm_runtime import LLMRuntime
+from ..persistence.database import (
+    init_db,
+)
+from ..persistence.models import (
+    ConversationModel,
+)
+
+from .llm_runtime import (
+    LLMRuntime,
+)
 from .schemas import (
     ChatRequest,
     ChatResponse,
@@ -36,6 +52,9 @@ from .schemas import (
     StoredMessageResponse,
 )
 
+from ..services.cached_chat_history import (
+    CachedChatHistoryService,
+)
 from ..services.chat_history import (
     ChatHistoryService,
     ConversationNotFoundError,
@@ -63,6 +82,9 @@ def error_response(
     code: str | None = None,
     errors: list[str] | None = None,
 ) -> JSONResponse:
+    """
+    Build a consistent JSON error response.
+    """
     payload = ErrorResponse(
         detail=detail,
         code=code,
@@ -78,6 +100,10 @@ def error_response(
 def conversation_summary(
     model: ConversationModel,
 ) -> ConversationSummaryResponse:
+    """
+    Convert a persistence model into the
+    conversation-summary API schema.
+    """
     return ConversationSummaryResponse(
         id=model.id,
         title=model.title,
@@ -89,6 +115,10 @@ def conversation_summary(
 def conversation_detail(
     model: ConversationModel,
 ) -> ConversationResponse:
+    """
+    Convert a persistence model into the
+    complete conversation API schema.
+    """
     return ConversationResponse(
         id=model.id,
         title=model.title,
@@ -111,34 +141,89 @@ def create_app(
     settings: Settings | None = None,
     *,
     runtime: LLMRuntime | None = None,
-    chat_history: ChatHistoryService | None = None,
+    chat_history: (
+        ChatHistoryService
+        | CachedChatHistoryService
+        | None
+    ) = None,
+    cache: ConversationCache | None = None,
     init_database: DatabaseInitializer = init_db,
 ) -> FastAPI:
+    """
+    Create and configure the FastAPI
+    application.
+
+    Production/default behaviour:
+    - SQLite persistence
+    - Redis cache-aside layer
+    - LLM runtime
+
+    Tests can inject:
+    - runtime
+    - chat-history service
+    - cache
+    - database initializer
+    """
+
     if settings is None:
         settings = get_settings()
 
     if runtime is None:
         runtime = LLMRuntime(settings)
 
+    # If the application creates the
+    # chat-history/cache stack itself,
+    # it also owns the cache lifecycle.
+    manage_cache = (
+        chat_history is None
+    )
+
     if chat_history is None:
-        chat_history = ChatHistoryService(
-            runtime
+        if cache is None:
+            cache = (
+                build_conversation_cache(
+                    settings
+                )
+            )
+
+        base_chat_history = (
+            ChatHistoryService(
+                runtime
+            )
         )
+
+        chat_history = (
+            CachedChatHistoryService(
+                base_chat_history,
+                cache,
+            )
+        )
+
+    elif cache is None:
+        # Dependency-injected services,
+        # especially tests, should not
+        # suddenly require Redis.
+        cache = NullConversationCache()
 
     @asynccontextmanager
     async def lifespan(
         app: FastAPI,
     ) -> AsyncIterator[None]:
         """
-        Application lifespan.
+        Application lifecycle.
 
         Startup:
-        - initialise SQLite tables
-        - load the LLM runtime
+        1. Initialise SQLite.
+        2. Check Redis availability.
+        3. Load the LLM runtime.
 
         Shutdown:
-        - currently no explicit resources
-          require cleanup
+        1. Close cache resources.
+
+        Redis failure is non-fatal because
+        SQLite remains the source of truth.
+
+        LLM loading failure remains fatal.
         """
 
         logger.info(
@@ -147,57 +232,135 @@ def create_app(
 
         await init_database()
 
-        logger.info(
-            "Loading LLM runtime..."
-        )
-
         try:
-            await app.state.runtime.load()
+            # --------------------------
+            # Redis
+            # --------------------------
+
+            if (
+                manage_cache
+                and settings.redis_enabled
+            ):
+                logger.info(
+                    "Connecting to Redis..."
+                )
+
+                redis_available = (
+                    await app.state.cache.ping()
+                )
+
+                if redis_available:
+                    logger.info(
+                        "Redis cache ready"
+                    )
+
+                else:
+                    logger.warning(
+                        "Redis unavailable; "
+                        "continuing with "
+                        "SQLite only"
+                    )
+
+            elif not settings.redis_enabled:
+                logger.info(
+                    "Redis caching disabled"
+                )
+
+            # --------------------------
+            # LLM runtime
+            # --------------------------
 
             logger.info(
-                "LLM runtime loaded successfully"
+                "Loading LLM runtime..."
             )
 
-        except Exception as exc:
-            logger.error(
-                "Failed to load LLM runtime: %s",
-                exc,
+            try:
+                await (
+                    app.state.runtime.load()
+                )
+
+                logger.info(
+                    "LLM runtime loaded "
+                    "successfully"
+                )
+
+            except Exception as exc:
+                logger.error(
+                    "Failed to load LLM "
+                    "runtime: %s",
+                    exc,
+                )
+
+                raise
+
+            # Application ready.
+            yield
+
+        finally:
+            # --------------------------
+            # Shutdown
+            # --------------------------
+
+            if manage_cache:
+                logger.info(
+                    "Closing cache..."
+                )
+
+                await (
+                    app.state.cache.close()
+                )
+
+            logger.info(
+                "Application shutting down..."
             )
-
-            raise
-
-        # Application is now ready to
-        # receive HTTP requests.
-        yield
-
-        logger.info(
-            "Application shutting down..."
-        )
 
     app = FastAPI(
         title="LLM Followups Server",
         version="1.0.0",
         description=(
-            "Generate and persist follow-up "
-            "question conversations."
+            "Generate and persist "
+            "follow-up question "
+            "conversations."
         ),
         lifespan=lifespan,
     )
 
+    # ----------------------------------
+    # Application state
+    # ----------------------------------
+
     app.state.runtime = runtime
     app.state.settings = settings
-    app.state.chat_history = chat_history
+    app.state.chat_history = (
+        chat_history
+    )
+    app.state.cache = cache
 
-    @app.get("/health", response_model=HealthResponse)
+    # ----------------------------------
+    # Health
+    # ----------------------------------
+
+    @app.get(
+        "/health",
+        response_model=HealthResponse,
+    )
     async def health() -> HealthResponse:
         runtime = app.state.runtime
 
         return HealthResponse(
             status="ok",
-            model_loaded=runtime.is_loaded(),
-            model_name=runtime.model_name(),
-            device=runtime.device_str(),
-            adapter_loaded=runtime.adapter_loaded(),
+            model_loaded=(
+                runtime.is_loaded()
+            ),
+            model_name=(
+                runtime.model_name()
+            ),
+            device=(
+                runtime.device_str()
+            ),
+            adapter_loaded=(
+                runtime.adapter_loaded()
+            ),
         )
 
     # ----------------------------------
@@ -226,15 +389,17 @@ def create_app(
             )
 
         try:
-            gen_req = runtime.make_request(
-                req.messages,
-                max_new_tokens=(
-                    req.max_new_tokens
-                ),
-                temperature=(
-                    req.temperature
-                ),
-                top_p=req.top_p,
+            gen_req = (
+                runtime.make_request(
+                    req.messages,
+                    max_new_tokens=(
+                        req.max_new_tokens
+                    ),
+                    temperature=(
+                        req.temperature
+                    ),
+                    top_p=req.top_p,
+                )
             )
 
         except ValueError as exc:
@@ -244,8 +409,10 @@ def create_app(
             ) from exc
 
         try:
-            result = await runtime.generate(
-                gen_req
+            result = (
+                await runtime.generate(
+                    gen_req
+                )
             )
 
         except RuntimeError as exc:
@@ -256,11 +423,15 @@ def create_app(
 
             raise HTTPException(
                 status_code=500,
-                detail="Generation failed",
+                detail=(
+                    "Generation failed"
+                ),
             ) from exc
 
         return ChatResponse(
-            response_text=result.final_text
+            response_text=(
+                result.final_text
+            )
         )
 
     # ----------------------------------
@@ -269,16 +440,25 @@ def create_app(
 
     @app.post(
         "/conversations",
-        response_model=ConversationResponse,
-        status_code=status.HTTP_201_CREATED,
+        response_model=(
+            ConversationResponse
+        ),
+        status_code=(
+            status.HTTP_201_CREATED
+        ),
     )
     async def create_conversation(
-        request: CreateConversationRequest,
+        request: (
+            CreateConversationRequest
+        ),
     ) -> ConversationResponse:
-        service = app.state.chat_history
+        service = (
+            app.state.chat_history
+        )
 
         conversation = (
-            await service.create_conversation(
+            await service
+            .create_conversation(
                 title=request.title
             )
         )
@@ -296,37 +476,55 @@ def create_app(
     async def list_conversations() -> list[
         ConversationSummaryResponse
     ]:
-        service = app.state.chat_history
+        service = (
+            app.state.chat_history
+        )
 
         conversations = (
-            await service.list_conversations()
+            await service
+            .list_conversations()
         )
 
         return [
-            conversation_summary(item)
-            for item in conversations
+            conversation_summary(
+                item
+            )
+            for item
+            in conversations
         ]
 
     @app.get(
-        "/conversations/{conversation_id}",
-        response_model=ConversationResponse,
+        (
+            "/conversations/"
+            "{conversation_id}"
+        ),
+        response_model=(
+            ConversationResponse
+        ),
     )
     async def get_conversation(
         conversation_id: str,
     ) -> ConversationResponse:
-        service = app.state.chat_history
+        service = (
+            app.state.chat_history
+        )
 
         try:
             conversation = (
-                await service.get_conversation(
+                await service
+                .get_conversation(
                     conversation_id
                 )
             )
 
-        except ConversationNotFoundError as exc:
+        except (
+            ConversationNotFoundError
+        ) as exc:
             raise HTTPException(
                 status_code=404,
-                detail="Conversation not found",
+                detail=(
+                    "Conversation not found"
+                ),
             ) from exc
 
         return conversation_detail(
@@ -334,23 +532,37 @@ def create_app(
         )
 
     @app.delete(
-        "/conversations/{conversation_id}",
-        status_code=status.HTTP_204_NO_CONTENT,
+        (
+            "/conversations/"
+            "{conversation_id}"
+        ),
+        status_code=(
+            status.HTTP_204_NO_CONTENT
+        ),
     )
     async def delete_conversation(
         conversation_id: str,
     ) -> Response:
-        service = app.state.chat_history
+        service = (
+            app.state.chat_history
+        )
 
         try:
-            await service.delete_conversation(
-                conversation_id
+            await (
+                service
+                .delete_conversation(
+                    conversation_id
+                )
             )
 
-        except ConversationNotFoundError as exc:
+        except (
+            ConversationNotFoundError
+        ) as exc:
             raise HTTPException(
                 status_code=404,
-                detail="Conversation not found",
+                detail=(
+                    "Conversation not found"
+                ),
             ) from exc
 
         return Response(
@@ -360,33 +572,51 @@ def create_app(
         )
 
     @app.post(
-        "/conversations/{conversation_id}/chat",
-        response_model=ConversationResponse,
+        (
+            "/conversations/"
+            "{conversation_id}/chat"
+        ),
+        response_model=(
+            ConversationResponse
+        ),
     )
     async def send_conversation_message(
         conversation_id: str,
-        request: SendConversationMessageRequest,
+        request: (
+            SendConversationMessageRequest
+        ),
     ) -> ConversationResponse:
-        service = app.state.chat_history
+        service = (
+            app.state.chat_history
+        )
 
-        if not app.state.runtime.is_loaded():
+        if not (
+            app.state.runtime.is_loaded()
+        ):
             raise HTTPException(
                 status_code=503,
-                detail="Model not loaded",
+                detail=(
+                    "Model not loaded"
+                ),
             )
 
         try:
             conversation = (
-                await service.send_message(
+                await service
+                .send_message(
                     conversation_id,
                     request.content,
                 )
             )
 
-        except ConversationNotFoundError as exc:
+        except (
+            ConversationNotFoundError
+        ) as exc:
             raise HTTPException(
                 status_code=404,
-                detail="Conversation not found",
+                detail=(
+                    "Conversation not found"
+                ),
             ) from exc
 
         except ValueError as exc:
@@ -414,13 +644,15 @@ def create_app(
 
         errors = [
             str(error)
-            for error in exc.errors()
+            for error
+            in exc.errors()
         ]
 
         return error_response(
             400,
             detail=(
-                "Request validation failed"
+                "Request validation "
+                "failed"
             ),
             code="validation_error",
             errors=errors,
@@ -437,13 +669,15 @@ def create_app(
 
         errors = [
             str(error)
-            for error in exc.errors()
+            for error
+            in exc.errors()
         ]
 
         return error_response(
             400,
             detail=(
-                "Request validation failed"
+                "Request validation "
+                "failed"
             ),
             code="validation_error",
             errors=errors,
@@ -480,7 +714,9 @@ def create_app(
 
         return error_response(
             500,
-            detail="Internal server error",
+            detail=(
+                "Internal server error"
+            ),
             code="runtime_error",
         )
 
@@ -500,7 +736,9 @@ def create_app(
 
         return error_response(
             500,
-            detail="Internal server error",
+            detail=(
+                "Internal server error"
+            ),
             code="unknown_error",
         )
 

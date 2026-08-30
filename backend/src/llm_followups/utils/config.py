@@ -21,6 +21,10 @@ class Settings:
     enforce_format: bool = True
     min_questions: int = 3
     bullet_style: Literal["dash", "asterisk", "either"] = "dash"
+    redis_enabled: bool = True
+    redis_url: str = ("redis://127.0.0.1:6379/0")
+    redis_cache_ttl_s: int = 300
+    redis_key_prefix: str = "ec_pro"
 
 def get_settings(env: Optional[dict[str, str]] = None) -> Settings:
     """
@@ -60,6 +64,36 @@ def get_settings(env: Optional[dict[str, str]] = None) -> Settings:
     bullet_style = get_env_var("BULLET_STYLE", "dash")
     if bullet_style not in ("dash", "asterisk", "either"):
         bullet_style = "dash"
+
+    redis_enabled = (
+    get_env_var(
+            "REDIS_ENABLED",
+            "true",
+        )
+        .lower()
+        in (
+            "true",
+            "1",
+            "yes",
+        )
+    )
+
+    redis_url = get_env_var(
+        "REDIS_URL",
+        "redis://127.0.0.1:6379/0",
+    )
+
+    redis_cache_ttl_s = int(
+        get_env_var(
+            "REDIS_CACHE_TTL_S",
+            "300",
+        )
+    )
+
+    redis_key_prefix = get_env_var(
+        "REDIS_KEY_PREFIX",
+        "ec_pro",
+    )
     
     return Settings(
         model_name=model_name,
@@ -76,7 +110,11 @@ def get_settings(env: Optional[dict[str, str]] = None) -> Settings:
         adapter_path=adapter_path,
         enforce_format=enforce_format,
         min_questions=min_questions,
-        bullet_style=bullet_style
+        bullet_style=bullet_style,
+        redis_enabled=redis_enabled,
+        redis_url=redis_url,
+        redis_cache_ttl_s=redis_cache_ttl_s,
+        redis_key_prefix=redis_key_prefix,
     )
 
 

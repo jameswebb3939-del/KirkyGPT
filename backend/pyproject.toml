@@ -28,6 +28,7 @@ dependencies = [
   "openai",
   "sqlalchemy",
   "aiosqlite",
+  "redis>=5.0",
 ]
 
 [project.optional-dependencies]
