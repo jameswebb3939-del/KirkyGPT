@@ -26,6 +26,8 @@ dependencies = [
   "tqdm",
   "aiohttp",
   "openai",
+  "sqlalchemy",
+  "aiosqlite",
 ]
 
 [project.optional-dependencies]
