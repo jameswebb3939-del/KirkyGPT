@@ -18,7 +18,15 @@ class UnitOfWork:
     """
     Own one SQLAlchemy session and transaction boundary.
 
-    Repositories never commit independently.
+    Repositories perform persistence operations but never
+    commit or roll back independently.
+
+    Behaviour:
+    - commit() explicitly makes writes durable
+    - exceptions cause rollback()
+    - clean read-only exits simply close the session
+    - closing an uncommitted SQLAlchemy session safely
+      discards any outstanding transaction
     """
 
     def __init__(
@@ -27,13 +35,9 @@ class UnitOfWork:
             AsyncSession
         ] = SessionFactory,
     ) -> None:
-        self._session_factory = (
-            session_factory
-        )
+        self._session_factory = session_factory
 
-        self.session: AsyncSession | None = (
-            None
-        )
+        self.session: AsyncSession | None = None
 
         self.conversations: (
             ConversationRepository | None
@@ -48,9 +52,7 @@ class UnitOfWork:
     async def __aenter__(
         self,
     ) -> "UnitOfWork":
-        self.session = (
-            self._session_factory()
-        )
+        self.session = self._session_factory()
 
         self.conversations = (
             ConversationRepository(
@@ -75,6 +77,7 @@ class UnitOfWork:
             )
 
         await self.session.commit()
+
         self._committed = True
 
     async def rollback(self) -> None:
@@ -82,6 +85,8 @@ class UnitOfWork:
             return
 
         await self.session.rollback()
+
+        self._committed = False
 
     async def __aexit__(
         self,
@@ -95,13 +100,27 @@ class UnitOfWork:
             return
 
         try:
+            # Explicit rollback is required when
+            # something failed inside the UoW.
             if exc_type is not None:
                 await self.rollback()
 
-            elif not self._committed:
-                # Safe default:
-                # uncommitted work does not leak.
-                await self.rollback()
+            # IMPORTANT:
+            #
+            # Do NOT explicitly rollback a successful
+            # read-only UoW here.
+            #
+            # session.rollback() expires ORM objects.
+            # Once the session is subsequently closed,
+            # callers receive detached + expired objects,
+            # causing DetachedInstanceError.
+            #
+            # session.close() itself safely releases /
+            # rolls back an uncommitted DB transaction.
 
         finally:
             await self.session.close()
+
+            self.session = None
+            self.conversations = None
+            self.messages = None

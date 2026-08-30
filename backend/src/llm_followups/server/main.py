@@ -2,6 +2,13 @@ from __future__ import annotations
 
 import logging
 
+from contextlib import asynccontextmanager
+from collections.abc import (
+    AsyncIterator,
+    Awaitable,
+    Callable,
+)
+
 from fastapi import (
     FastAPI,
     HTTPException,
@@ -9,19 +16,15 @@ from fastapi import (
     Response,
     status,
 )
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
-from llm_followups.persistence.database import (
-    init_db,
-)
-from llm_followups.persistence.models import (
-    ConversationModel,
-)
-from llm_followups.server.llm_runtime import (
-    LLMRuntime,
-)
-from llm_followups.server.schemas import (
+from ..persistence.database import init_db
+from ..persistence.models import ConversationModel
+
+from .llm_runtime import LLMRuntime
+from .schemas import (
     ChatRequest,
     ChatResponse,
     ConversationResponse,
@@ -32,17 +35,25 @@ from llm_followups.server.schemas import (
     SendConversationMessageRequest,
     StoredMessageResponse,
 )
-from llm_followups.services.chat_history import (
+
+from ..services.chat_history import (
     ChatHistoryService,
     ConversationNotFoundError,
 )
-from llm_followups.utils.config import (
+
+from ..utils.config import (
     Settings,
     get_settings,
 )
 
 
 logger = logging.getLogger(__name__)
+
+
+DatabaseInitializer = Callable[
+    [],
+    Awaitable[None],
+]
 
 
 def error_response(
@@ -98,9 +109,21 @@ def conversation_detail(
 
 def create_app(
     settings: Settings | None = None,
+    *,
+    runtime: LLMRuntime | None = None,
+    chat_history: ChatHistoryService | None = None,
+    init_database: DatabaseInitializer = init_db,
 ) -> FastAPI:
     if settings is None:
         settings = get_settings()
+
+    if runtime is None:
+        runtime = LLMRuntime(settings)
+
+    if chat_history is None:
+        chat_history = ChatHistoryService(
+            runtime
+        )
 
     app = FastAPI(
         title="LLM Followups Server",
@@ -111,14 +134,9 @@ def create_app(
         ),
     )
 
-    runtime = LLMRuntime(settings)
-
     app.state.runtime = runtime
     app.state.settings = settings
-
-    app.state.chat_history = (
-        ChatHistoryService(runtime)
-    )
+    app.state.chat_history = chat_history
 
     @app.on_event("startup")
     async def on_startup() -> None:
@@ -126,7 +144,7 @@ def create_app(
             "Initializing database..."
         )
 
-        await init_db()
+        await init_database()
 
         logger.info(
             "Loading LLM runtime..."
@@ -146,10 +164,6 @@ def create_app(
             )
             raise
 
-    # ----------------------------------
-    # Existing health endpoint
-    # ----------------------------------
-
     @app.get(
         "/health",
         response_model=HealthResponse,
@@ -162,13 +176,11 @@ def create_app(
             model_loaded=runtime.is_loaded(),
             model_name=runtime.model_name(),
             device=runtime.device_str(),
-            adapter_loaded=(
-                runtime.adapter_loaded()
-            ),
+            adapter_loaded=runtime.adapter_loaded(),
         )
 
     # ----------------------------------
-    # Existing stateless chat endpoint
+    # Existing stateless endpoint
     # ----------------------------------
 
     @app.post(
@@ -231,7 +243,7 @@ def create_app(
         )
 
     # ----------------------------------
-    # Conversation history
+    # Persistent conversations
     # ----------------------------------
 
     @app.post(
@@ -249,10 +261,6 @@ def create_app(
                 title=request.title
             )
         )
-
-        # Newly created conversation has
-        # no messages.
-        conversation.messages = []
 
         return conversation_detail(
             conversation
@@ -294,11 +302,11 @@ def create_app(
                 )
             )
 
-        except ConversationNotFoundError:
+        except ConversationNotFoundError as exc:
             raise HTTPException(
                 status_code=404,
                 detail="Conversation not found",
-            )
+            ) from exc
 
         return conversation_detail(
             conversation
@@ -318,11 +326,11 @@ def create_app(
                 conversation_id
             )
 
-        except ConversationNotFoundError:
+        except ConversationNotFoundError as exc:
             raise HTTPException(
                 status_code=404,
                 detail="Conversation not found",
-            )
+            ) from exc
 
         return Response(
             status_code=(
@@ -354,11 +362,11 @@ def create_app(
                 )
             )
 
-        except ConversationNotFoundError:
+        except ConversationNotFoundError as exc:
             raise HTTPException(
                 status_code=404,
                 detail="Conversation not found",
-            )
+            ) from exc
 
         except ValueError as exc:
             raise HTTPException(
@@ -371,8 +379,31 @@ def create_app(
         )
 
     # ----------------------------------
-    # Error handlers
+    # Error handling
     # ----------------------------------
+
+    @app.exception_handler(
+        RequestValidationError
+    )
+    async def request_validation_error_handler(
+        request: Request,
+        exc: RequestValidationError,
+    ) -> JSONResponse:
+        del request
+
+        errors = [
+            str(error)
+            for error in exc.errors()
+        ]
+
+        return error_response(
+            400,
+            detail=(
+                "Request validation failed"
+            ),
+            code="validation_error",
+            errors=errors,
+        )
 
     @app.exception_handler(
         ValidationError
@@ -397,7 +428,9 @@ def create_app(
             errors=errors,
         )
 
-    @app.exception_handler(ValueError)
+    @app.exception_handler(
+        ValueError
+    )
     async def value_error_handler(
         request: Request,
         exc: ValueError,
@@ -410,7 +443,9 @@ def create_app(
             code="invalid_parameter",
         )
 
-    @app.exception_handler(RuntimeError)
+    @app.exception_handler(
+        RuntimeError
+    )
     async def runtime_error_handler(
         request: Request,
         exc: RuntimeError,
@@ -428,7 +463,9 @@ def create_app(
             code="runtime_error",
         )
 
-    @app.exception_handler(Exception)
+    @app.exception_handler(
+        Exception
+    )
     async def generic_exception_handler(
         request: Request,
         exc: Exception,

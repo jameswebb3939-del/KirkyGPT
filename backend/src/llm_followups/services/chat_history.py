@@ -1,33 +1,30 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 
-from llm_followups.persistence.models import (
+from ..persistence.models import (
     ConversationModel,
     MessageModel,
     utc_now,
 )
-from llm_followups.persistence.unit_of_work import (
+from ..persistence.unit_of_work import (
     UnitOfWork,
 )
-from llm_followups.server.llm_runtime import (
+from ..server.llm_runtime import (
     LLMRuntime,
 )
-from llm_followups.server.schemas import (
+from ..server.schemas import (
     ChatMessage,
 )
 
 
-class ConversationNotFoundError(
-    LookupError
-):
+class ConversationNotFoundError(LookupError):
     pass
 
 
 def create_title(content: str) -> str:
-    cleaned = " ".join(
-        content.strip().split()
-    )
+    cleaned = " ".join(content.strip().split())
 
     if not cleaned:
         return "New chat"
@@ -38,33 +35,32 @@ def create_title(content: str) -> str:
     return f"{cleaned[:35]}..."
 
 
+UoWFactory = Callable[[], UnitOfWork]
+
+
 class ChatHistoryService:
     def __init__(
         self,
         runtime: LLMRuntime,
+        *,
+        uow_factory: UoWFactory = UnitOfWork,
     ) -> None:
         self._runtime = runtime
+        self._uow_factory = uow_factory
 
-        # Prevent two generations modifying the
-        # same conversation simultaneously.
-        self._locks: dict[
-            str,
-            asyncio.Lock,
-        ] = {}
+        # Prevent concurrent writes to the same conversation
+        # within this application process.
+        self._locks: dict[str, asyncio.Lock] = {}
 
     def _lock_for(
         self,
         conversation_id: str,
     ) -> asyncio.Lock:
-        lock = self._locks.get(
-            conversation_id
-        )
+        lock = self._locks.get(conversation_id)
 
         if lock is None:
             lock = asyncio.Lock()
-            self._locks[
-                conversation_id
-            ] = lock
+            self._locks[conversation_id] = lock
 
         return lock
 
@@ -74,52 +70,42 @@ class ChatHistoryService:
         title: str = "New chat",
     ) -> ConversationModel:
         conversation = ConversationModel(
-            title=title.strip()
-            or "New chat"
+            title=title.strip() or "New chat",
         )
 
-        async with UnitOfWork() as uow:
-            assert (
-                uow.conversations
-                is not None
-            )
+        async with self._uow_factory() as uow:
+            assert uow.conversations is not None
 
             await uow.conversations.add(
-                conversation
+                conversation,
             )
 
             await uow.commit()
 
-        return conversation
+        # Reload it so the returned model has its
+        # messages relationship loaded consistently.
+        return await self.get_conversation(
+            conversation.id,
+        )
 
     async def list_conversations(
         self,
     ) -> list[ConversationModel]:
-        async with UnitOfWork() as uow:
-            assert (
-                uow.conversations
-                is not None
-            )
+        async with self._uow_factory() as uow:
+            assert uow.conversations is not None
 
-            return (
-                await uow.conversations.list_all()
-            )
+            return await uow.conversations.list_all()
 
     async def get_conversation(
         self,
         conversation_id: str,
     ) -> ConversationModel:
-        async with UnitOfWork() as uow:
-            assert (
-                uow.conversations
-                is not None
-            )
+        async with self._uow_factory() as uow:
+            assert uow.conversations is not None
 
-            conversation = (
-                await uow.conversations.get(
-                    conversation_id,
-                    include_messages=True,
-                )
+            conversation = await uow.conversations.get(
+                conversation_id,
+                include_messages=True,
             )
 
             if conversation is None:
@@ -133,16 +119,11 @@ class ChatHistoryService:
         self,
         conversation_id: str,
     ) -> None:
-        async with UnitOfWork() as uow:
-            assert (
-                uow.conversations
-                is not None
-            )
+        async with self._uow_factory() as uow:
+            assert uow.conversations is not None
 
-            deleted = (
-                await uow.conversations.delete(
-                    conversation_id
-                )
+            deleted = await uow.conversations.delete(
+                conversation_id,
             )
 
             if not deleted:
@@ -184,21 +165,16 @@ class ChatHistoryService:
         conversation_id: str,
         content: str,
     ) -> ConversationModel:
-        # ---------------------------------
-        # Phase 1: read history
-        # ---------------------------------
+        # ----------------------------------
+        # Phase 1: read conversation history
+        # ----------------------------------
 
-        async with UnitOfWork() as uow:
-            assert (
-                uow.conversations
-                is not None
-            )
+        async with self._uow_factory() as uow:
+            assert uow.conversations is not None
 
-            conversation = (
-                await uow.conversations.get(
-                    conversation_id,
-                    include_messages=True,
-                )
+            conversation = await uow.conversations.get(
+                conversation_id,
+                include_messages=True,
             )
 
             if conversation is None:
@@ -211,15 +187,15 @@ class ChatHistoryService:
                     role=message.role,
                     content=message.content,
                 )
-                for message
-                in conversation.messages
+                for message in conversation.messages
             ]
 
-        # ---------------------------------
+        # ----------------------------------
         # Phase 2: model generation
         #
-        # No DB transaction is held here.
-        # ---------------------------------
+        # No SQLite write transaction is
+        # held open while the LLM runs.
+        # ----------------------------------
 
         user_message = ChatMessage(
             role="user",
@@ -245,27 +221,19 @@ class ChatHistoryService:
             generation_result.final_text
         )
 
-        # ---------------------------------
-        # Phase 3: atomic write
+        # ----------------------------------
+        # Phase 3: atomic persistence
         #
-        # User + assistant + conversation
-        # metadata are committed together.
-        # ---------------------------------
+        # Both messages and conversation
+        # metadata commit together.
+        # ----------------------------------
 
-        async with UnitOfWork() as uow:
-            assert (
-                uow.conversations
-                is not None
-            )
-            assert (
-                uow.messages
-                is not None
-            )
+        async with self._uow_factory() as uow:
+            assert uow.conversations is not None
+            assert uow.messages is not None
 
-            conversation = (
-                await uow.conversations.get(
-                    conversation_id
-                )
+            conversation = await uow.conversations.get(
+                conversation_id,
             )
 
             if conversation is None:
@@ -301,20 +269,14 @@ class ChatHistoryService:
                 stored_assistant
             )
 
-            if (
-                conversation.title
-                == "New chat"
-            ):
+            if conversation.title == "New chat":
                 conversation.title = (
                     create_title(content)
                 )
 
-            conversation.updated_at = (
-                utc_now()
-            )
+            conversation.updated_at = utc_now()
 
-            # BOTH messages become durable
-            # together here.
+            # One transaction boundary.
             await uow.commit()
 
         return await self.get_conversation(
