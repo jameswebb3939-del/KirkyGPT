@@ -1,17 +1,27 @@
-export type MessageRole = "user" | "assistant";
+export type MessageRole =
+  | "user"
+  | "assistant";
 
 export interface ChatMessage {
   role: MessageRole;
   content: string;
 }
 
-export interface Conversation {
+export interface StoredMessage
+  extends ChatMessage {
   id: string;
-  title: string;
-  messages: ChatMessage[];
-  updatedAt: number;
+  position: number;
+  created_at: string;
 }
 
-export interface ChatResponse {
-  response_text: string;
+export interface ConversationSummary {
+  id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Conversation
+  extends ConversationSummary {
+  messages: StoredMessage[];
 }

@@ -44,7 +44,7 @@ export default function Sidebar({
         {[...conversations]
           .sort(
             (a, b) =>
-              b.updatedAt - a.updatedAt,
+              new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
           )
           .map((conversation) => (
             <div

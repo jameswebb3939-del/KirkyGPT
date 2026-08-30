@@ -8,55 +8,19 @@ import Header from "./components/Header";
 import Sidebar from "./components/Sidebar";
 import ChatWindow from "./components/ChatWindow";
 
-import { sendChat } from "./services/api";
+import {
+  createConversation,
+  deleteConversation,
+  getConversation,
+  listConversations,
+  sendMessage,
+} from "./services/api";
 
 import type {
   ChatMessage,
   Conversation,
 } from "./types/chat";
 
-const STORAGE_KEY = "ec-pro-conversations";
-
-function createConversation(): Conversation {
-  return {
-    id: crypto.randomUUID(),
-    title: "New chat",
-    messages: [],
-    updatedAt: Date.now(),
-  };
-}
-
-function loadConversations(): Conversation[] {
-  try {
-    const stored = localStorage.getItem(
-      STORAGE_KEY,
-    );
-
-    if (!stored) {
-      return [];
-    }
-
-    const parsed = JSON.parse(stored);
-
-    if (!Array.isArray(parsed)) {
-      return [];
-    }
-
-    return parsed;
-  } catch {
-    return [];
-  }
-}
-
-function createTitle(message: string): string {
-  const cleaned = message.trim();
-
-  if (cleaned.length <= 35) {
-    return cleaned;
-  }
-
-  return `${cleaned.slice(0, 35)}...`;
-}
 
 export default function App() {
   const [sidebarOpen, setSidebarOpen] =
@@ -65,20 +29,14 @@ export default function App() {
   const [
     conversations,
     setConversations,
-  ] = useState<Conversation[]>(
-    loadConversations,
-  );
+  ] = useState<Conversation[]>([]);
 
   const [
     activeConversationId,
     setActiveConversationId,
-  ] = useState<string | null>(() => {
-    const existing = loadConversations();
-
-    return existing.length > 0
-      ? existing[0].id
-      : null;
-  });
+  ] = useState<string | null>(
+    null,
+  );
 
   const [isLoading, setIsLoading] =
     useState(false);
@@ -86,106 +44,183 @@ export default function App() {
   const [error, setError] =
     useState<string | null>(null);
 
+  const activeConversation =
+    useMemo(
+      () =>
+        conversations.find(
+          (conversation) =>
+            conversation.id ===
+            activeConversationId,
+        ) ?? null,
+      [
+        conversations,
+        activeConversationId,
+      ],
+    );
+
   /*
-   * Save conversations whenever they change.
+   * Load conversation history
+   * from SQLite when EC Pro starts.
    */
   useEffect(() => {
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify(conversations),
-    );
-  }, [conversations]);
+    async function loadHistory() {
+      setError(null);
 
-  /*
-   * Find the currently selected conversation.
-   */
-  const activeConversation = useMemo(
-    () =>
-      conversations.find(
-        (conversation) =>
-          conversation.id ===
-          activeConversationId,
-      ) ?? null,
-    [
-      conversations,
-      activeConversationId,
-    ],
-  );
+      try {
+        const summaries =
+          await listConversations();
 
-  /*
-   * Create a new conversation.
-   */
-  function handleNewChat() {
-    const conversation =
-      createConversation();
+        const loaded =
+          await Promise.all(
+            summaries.map(
+              (summary) =>
+                getConversation(
+                  summary.id,
+                ),
+            ),
+          );
 
-    setConversations((current) => [
-      conversation,
-      ...current,
-    ]);
+        setConversations(loaded);
 
-    setActiveConversationId(
-      conversation.id,
-    );
+        if (loaded.length > 0) {
+          setActiveConversationId(
+            loaded[0].id,
+          );
+        }
+      } catch (err) {
+        if (err instanceof Error) {
+          setError(err.message);
+        } else {
+          setError(
+            "Could not load chat history.",
+          );
+        }
+      }
+    }
 
-    setError(null);
-  }
+    void loadHistory();
+  }, []);
 
-  /*
-   * Select an existing conversation.
-   */
-  function selectConversation(
-    id: string,
-  ) {
-    setActiveConversationId(id);
-
+  async function handleNewChat() {
     setError(null);
 
-    /*
-     * On mobile, close the sidebar
-     * after selecting a chat.
-     */
-    if (window.innerWidth <= 768) {
-      setSidebarOpen(false);
+    try {
+      const conversation =
+        await createConversation();
+
+      setConversations(
+        (current) => [
+          conversation,
+          ...current,
+        ],
+      );
+
+      setActiveConversationId(
+        conversation.id,
+      );
+    } catch (err) {
+      if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError(
+          "Could not create conversation.",
+        );
+      }
     }
   }
 
-  /*
-   * Delete a conversation.
-   */
-  function handleDeleteConversation(
+  async function selectConversation(
     id: string,
   ) {
-    setConversations((current) => {
-      const remaining =
-        current.filter(
-          (conversation) =>
-            conversation.id !== id,
-        );
+    setError(null);
 
-      /*
-       * If the deleted conversation was
-       * the active one, select another.
-       */
+    try {
+      const conversation =
+        await getConversation(id);
+
+      setConversations(
+        (current) => {
+          const exists =
+            current.some(
+              (item) =>
+                item.id === id,
+            );
+
+          if (!exists) {
+            return [
+              conversation,
+              ...current,
+            ];
+          }
+
+          return current.map(
+            (item) =>
+              item.id === id
+                ? conversation
+                : item,
+          );
+        },
+      );
+
+      setActiveConversationId(id);
+
       if (
-        activeConversationId === id
+        window.innerWidth <= 768
       ) {
-        setActiveConversationId(
-          remaining.length > 0
-            ? remaining[0].id
-            : null,
+        setSidebarOpen(false);
+      }
+    } catch (err) {
+      if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError(
+          "Could not load conversation.",
         );
       }
-
-      return remaining;
-    });
-
-    setError(null);
+    }
   }
 
-  /*
-   * Send a user message to the backend.
-   */
+  async function handleDeleteConversation(
+    id: string,
+  ) {
+    setError(null);
+
+    try {
+      await deleteConversation(id);
+
+      setConversations(
+        (current) => {
+          const remaining =
+            current.filter(
+              (conversation) =>
+                conversation.id !== id,
+            );
+
+          if (
+            activeConversationId ===
+            id
+          ) {
+            setActiveConversationId(
+              remaining.length > 0
+                ? remaining[0].id
+                : null,
+            );
+          }
+
+          return remaining;
+        },
+      );
+    } catch (err) {
+      if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError(
+          "Could not delete conversation.",
+        );
+      }
+    }
+  }
+
   async function handleSend(
     content: string,
   ) {
@@ -195,102 +230,50 @@ export default function App() {
       activeConversation;
 
     /*
-     * If there isn't currently a chat,
-     * automatically create one.
+     * Sending from the blank landing
+     * page automatically creates a chat.
      */
     if (!conversation) {
-      conversation =
-        createConversation();
+      try {
+        conversation =
+          await createConversation();
 
-      setConversations(
-        (current) => [
-          conversation!,
-          ...current,
-        ],
-      );
+        setConversations(
+          (current) => [
+            conversation!,
+            ...current,
+          ],
+        );
 
-      setActiveConversationId(
-        conversation.id,
-      );
+        setActiveConversationId(
+          conversation.id,
+        );
+      } catch (err) {
+        if (err instanceof Error) {
+          setError(err.message);
+        }
+
+        return;
+      }
     }
 
     const conversationId =
       conversation.id;
 
-    const userMessage: ChatMessage = {
-      role: "user",
-      content,
-    };
-
     /*
-     * Send the complete conversation
-     * history to the backend.
+     * Optimistically display the user's
+     * message while Llama generates.
      */
-    const requestMessages: ChatMessage[] =
-      [
-        ...conversation.messages,
-        userMessage,
-      ];
+    const optimisticUser:
+      ChatMessage = {
+        role: "user",
+        content,
+      };
 
-    /*
-     * Immediately display the user's
-     * message in the UI.
-     */
     setConversations(
       (current) =>
-        current.map((item) =>
-          item.id ===
-          conversationId
-            ? {
-                ...item,
-
-                /*
-                 * Use the first message
-                 * as the chat title.
-                 */
-                title:
-                  item.messages
-                    .length === 0
-                    ? createTitle(
-                        content,
-                      )
-                    : item.title,
-
-                messages:
-                  requestMessages,
-
-                updatedAt:
-                  Date.now(),
-              }
-            : item,
-        ),
-    );
-
-    setIsLoading(true);
-
-    try {
-      /*
-       * Call FastAPI /chat.
-       */
-      const responseText =
-        await sendChat(
-          requestMessages,
-        );
-
-      const assistantMessage: ChatMessage =
-        {
-          role: "assistant",
-          content:
-            responseText,
-        };
-
-      /*
-       * Add the assistant response
-       * to the correct conversation.
-       */
-      setConversations(
-        (current) =>
-          current.map((item) =>
+        current.map(
+          (item) =>
             item.id ===
             conversationId
               ? {
@@ -298,16 +281,86 @@ export default function App() {
 
                   messages: [
                     ...item.messages,
-                    assistantMessage,
-                  ],
 
-                  updatedAt:
-                    Date.now(),
+                    {
+                      id:
+                        `pending-${Date.now()}`,
+
+                      role:
+                        optimisticUser.role,
+
+                      content:
+                        optimisticUser.content,
+
+                      position:
+                        item.messages
+                          .length,
+
+                      created_at:
+                        new Date()
+                          .toISOString(),
+                    },
+                  ],
                 }
               : item,
+        ),
+    );
+
+    setIsLoading(true);
+
+    try {
+      /*
+       * Backend:
+       *
+       * history → model
+       *         → transaction
+       *         → SQLite
+       */
+      const updated =
+        await sendMessage(
+          conversationId,
+          content,
+        );
+
+      /*
+       * Replace optimistic state with
+       * the authoritative SQLite data.
+       */
+      setConversations(
+        (current) =>
+          current.map(
+            (item) =>
+              item.id ===
+              conversationId
+                ? updated
+                : item,
           ),
       );
     } catch (err) {
+      /*
+       * Reload from SQLite so failed
+       * optimistic messages disappear.
+       */
+      try {
+        const authoritative =
+          await getConversation(
+            conversationId,
+          );
+
+        setConversations(
+          (current) =>
+            current.map(
+              (item) =>
+                item.id ===
+                conversationId
+                  ? authoritative
+                  : item,
+            ),
+        );
+      } catch {
+        // Keep original error.
+      }
+
       if (err instanceof Error) {
         setError(err.message);
       } else {
