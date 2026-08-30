@@ -25,6 +25,8 @@ class Settings:
     redis_url: str = ("redis://127.0.0.1:6379/0")
     redis_cache_ttl_s: int = 300
     redis_key_prefix: str = "ec_pro"
+    redis_chat_cache_enabled: bool = True
+    redis_chat_cache_ttl_s: int = 600
 
 def get_settings(env: Optional[dict[str, str]] = None) -> Settings:
     """
@@ -94,6 +96,26 @@ def get_settings(env: Optional[dict[str, str]] = None) -> Settings:
         "REDIS_KEY_PREFIX",
         "ec_pro",
     )
+
+    redis_chat_cache_enabled = (
+        get_env_var(
+            "REDIS_CHAT_CACHE_ENABLED",
+            "true",
+        )
+        .lower()
+        in (
+            "true",
+            "1",
+            "yes",
+        )
+    )
+
+    redis_chat_cache_ttl_s = int(
+        get_env_var(
+            "REDIS_CHAT_CACHE_TTL_S",
+            "600",
+        )
+    )
     
     return Settings(
         model_name=model_name,
@@ -115,6 +137,8 @@ def get_settings(env: Optional[dict[str, str]] = None) -> Settings:
         redis_url=redis_url,
         redis_cache_ttl_s=redis_cache_ttl_s,
         redis_key_prefix=redis_key_prefix,
+        redis_chat_cache_enabled=redis_chat_cache_enabled,
+        redis_chat_cache_ttl_s=redis_cache_ttl_s,
     )
 
 

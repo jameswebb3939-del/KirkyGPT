@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import logging
 
-from contextlib import asynccontextmanager
 from collections.abc import (
     AsyncIterator,
     Awaitable,
     Callable,
 )
+from contextlib import asynccontextmanager
 
 from fastapi import (
     FastAPI,
@@ -16,11 +16,22 @@ from fastapi import (
     Response,
     status,
 )
-from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.exceptions import (
+    RequestValidationError,
+)
+from fastapi.responses import (
+    JSONResponse,
+)
 from pydantic import ValidationError
 
+from ..cache.chat_null import (
+    NullChatGenerationCache,
+)
+from ..cache.chat_protocol import (
+    ChatGenerationCache,
+)
 from ..cache.factory import (
+    build_chat_generation_cache,
     build_conversation_cache,
 )
 from ..cache.null import (
@@ -54,6 +65,9 @@ from .schemas import (
 
 from ..services.cached_chat_history import (
     CachedChatHistoryService,
+)
+from ..services.cached_llm_runtime import (
+    CachedLLMRuntime,
 )
 from ..services.chat_history import (
     ChatHistoryService,
@@ -101,8 +115,8 @@ def conversation_summary(
     model: ConversationModel,
 ) -> ConversationSummaryResponse:
     """
-    Convert a persistence model into the
-    conversation-summary API schema.
+    Convert a persistence model into a
+    conversation-summary API response.
     """
     return ConversationSummaryResponse(
         id=model.id,
@@ -116,8 +130,8 @@ def conversation_detail(
     model: ConversationModel,
 ) -> ConversationResponse:
     """
-    Convert a persistence model into the
-    complete conversation API schema.
+    Convert a persistence model into a
+    complete conversation API response.
     """
     return ConversationResponse(
         id=model.id,
@@ -147,36 +161,113 @@ def create_app(
         | None
     ) = None,
     cache: ConversationCache | None = None,
-    init_database: DatabaseInitializer = init_db,
+    generation_cache: (
+        ChatGenerationCache | None
+    ) = None,
+    init_database: (
+        DatabaseInitializer
+    ) = init_db,
 ) -> FastAPI:
     """
     Create and configure the FastAPI
     application.
 
     Production/default behaviour:
-    - SQLite persistence
-    - Redis cache-aside layer
-    - LLM runtime
 
-    Tests can inject:
+    - SQLite is the source of truth for
+      conversation persistence.
+
+    - Redis caches persisted conversation
+      data.
+
+    - Redis also caches identical LLM
+      generation requests.
+
+    - LLMRuntime remains responsible for
+      actual model generation.
+
+    Tests may inject:
+
     - runtime
-    - chat-history service
-    - cache
+    - chat history service
+    - conversation cache
+    - generation cache
     - database initializer
     """
 
     if settings is None:
         settings = get_settings()
 
-    if runtime is None:
-        runtime = LLMRuntime(settings)
+    # ==================================
+    # Base LLM runtime
+    # ==================================
 
-    # If the application creates the
-    # chat-history/cache stack itself,
-    # it also owns the cache lifecycle.
-    manage_cache = (
-        chat_history is None
+    runtime_injected = (
+        runtime is not None
     )
+
+    if runtime is None:
+        base_runtime = LLMRuntime(
+            settings
+        )
+    else:
+        base_runtime = runtime
+
+    # ==================================
+    # Redis generation cache
+    # ==================================
+
+    manage_generation_cache = False
+
+    if generation_cache is None:
+        if runtime_injected:
+            # Tests that inject their own
+            # runtime should not suddenly
+            # require Redis or have their
+            # fake runtime wrapped.
+            generation_cache = (
+                NullChatGenerationCache()
+            )
+
+            app_runtime = (
+                base_runtime
+            )
+
+        else:
+            generation_cache = (
+                build_chat_generation_cache(
+                    settings
+                )
+            )
+
+            manage_generation_cache = (
+                True
+            )
+
+            app_runtime = (
+                CachedLLMRuntime(
+                    base_runtime,
+                    generation_cache,
+                    settings,
+                )
+            )
+
+    else:
+        # A generation cache was
+        # explicitly injected, so wrap
+        # the runtime but do not assume
+        # ownership of the cache.
+        app_runtime = CachedLLMRuntime(
+            base_runtime,
+            generation_cache,
+            settings,
+        )
+
+    # ==================================
+    # Conversation Redis cache
+    # ==================================
+
+    manage_cache = False
 
     if chat_history is None:
         if cache is None:
@@ -186,9 +277,18 @@ def create_app(
                 )
             )
 
+            manage_cache = True
+
+        # Important:
+        # use app_runtime here rather
+        # than base_runtime.
+        #
+        # This means persistent browser
+        # conversations also use the
+        # generation cache.
         base_chat_history = (
             ChatHistoryService(
-                runtime
+                app_runtime
             )
         )
 
@@ -200,10 +300,15 @@ def create_app(
         )
 
     elif cache is None:
-        # Dependency-injected services,
-        # especially tests, should not
-        # suddenly require Redis.
-        cache = NullConversationCache()
+        # Dependency-injected services
+        # should not require Redis.
+        cache = (
+            NullConversationCache()
+        )
+
+    # ==================================
+    # Application lifespan
+    # ==================================
 
     @asynccontextmanager
     async def lifespan(
@@ -213,28 +318,35 @@ def create_app(
         Application lifecycle.
 
         Startup:
+
         1. Initialise SQLite.
-        2. Check Redis availability.
-        3. Load the LLM runtime.
+        2. Check conversation Redis cache.
+        3. Check generation Redis cache.
+        4. Load the LLM runtime.
 
         Shutdown:
-        1. Close cache resources.
 
-        Redis failure is non-fatal because
-        SQLite remains the source of truth.
+        1. Close generation cache.
+        2. Close conversation cache.
 
-        LLM loading failure remains fatal.
+        Redis failures are non-fatal.
+        SQLite and the LLM remain the
+        authoritative fallbacks.
         """
-
-        logger.info(
-            "Initializing database..."
-        )
-
-        await init_database()
 
         try:
             # --------------------------
-            # Redis
+            # SQLite
+            # --------------------------
+
+            logger.info(
+                "Initializing database..."
+            )
+
+            await init_database()
+
+            # --------------------------
+            # Conversation Redis cache
             # --------------------------
 
             if (
@@ -242,21 +354,27 @@ def create_app(
                 and settings.redis_enabled
             ):
                 logger.info(
-                    "Connecting to Redis..."
+                    "Connecting to Redis "
+                    "conversation cache..."
                 )
 
                 redis_available = (
-                    await app.state.cache.ping()
+                    await (
+                        app.state.cache
+                        .ping()
+                    )
                 )
 
                 if redis_available:
                     logger.info(
-                        "Redis cache ready"
+                        "Redis conversation "
+                        "cache ready"
                     )
 
                 else:
                     logger.warning(
-                        "Redis unavailable; "
+                        "Redis conversation "
+                        "cache unavailable; "
                         "continuing with "
                         "SQLite only"
                     )
@@ -267,7 +385,61 @@ def create_app(
                 )
 
             # --------------------------
-            # LLM runtime
+            # Generation Redis cache
+            # --------------------------
+
+            if (
+                manage_generation_cache
+                and settings.redis_enabled
+                and (
+                    settings
+                    .redis_chat_cache_enabled
+                )
+            ):
+                logger.info(
+                    "Connecting to Redis "
+                    "chat generation cache..."
+                )
+
+                chat_cache_available = (
+                    await (
+                        app.state
+                        .generation_cache
+                        .ping()
+                    )
+                )
+
+                if chat_cache_available:
+                    logger.info(
+                        "Redis chat "
+                        "generation cache "
+                        "ready"
+                    )
+
+                else:
+                    logger.warning(
+                        "Redis chat "
+                        "generation cache "
+                        "unavailable; "
+                        "continuing with "
+                        "direct LLM "
+                        "generation"
+                    )
+
+            elif (
+                settings.redis_enabled
+                and not (
+                    settings
+                    .redis_chat_cache_enabled
+                )
+            ):
+                logger.info(
+                    "Redis chat generation "
+                    "cache disabled"
+                )
+
+            # --------------------------
+            # LLM
             # --------------------------
 
             logger.info(
@@ -276,7 +448,8 @@ def create_app(
 
             try:
                 await (
-                    app.state.runtime.load()
+                    app.state.runtime
+                    .load()
                 )
 
                 logger.info(
@@ -298,21 +471,44 @@ def create_app(
 
         finally:
             # --------------------------
-            # Shutdown
+            # Generation cache shutdown
+            # --------------------------
+
+            if manage_generation_cache:
+                logger.info(
+                    "Closing Redis chat "
+                    "generation cache..."
+                )
+
+                await (
+                    app.state
+                    .generation_cache
+                    .close()
+                )
+
+            # --------------------------
+            # Conversation cache shutdown
             # --------------------------
 
             if manage_cache:
                 logger.info(
-                    "Closing cache..."
+                    "Closing Redis "
+                    "conversation cache..."
                 )
 
                 await (
-                    app.state.cache.close()
+                    app.state.cache
+                    .close()
                 )
 
             logger.info(
-                "Application shutting down..."
+                "Application shutting "
+                "down..."
             )
+
+    # ==================================
+    # FastAPI application
+    # ==================================
 
     app = FastAPI(
         title="LLM Followups Server",
@@ -325,27 +521,46 @@ def create_app(
         lifespan=lifespan,
     )
 
-    # ----------------------------------
+    # ==================================
     # Application state
-    # ----------------------------------
+    # ==================================
 
-    app.state.runtime = runtime
-    app.state.settings = settings
+    app.state.runtime = (
+        app_runtime
+    )
+
+    app.state.base_runtime = (
+        base_runtime
+    )
+
+    app.state.settings = (
+        settings
+    )
+
     app.state.chat_history = (
         chat_history
     )
-    app.state.cache = cache
 
-    # ----------------------------------
+    app.state.cache = (
+        cache
+    )
+
+    app.state.generation_cache = (
+        generation_cache
+    )
+
+    # ==================================
     # Health
-    # ----------------------------------
+    # ==================================
 
     @app.get(
         "/health",
         response_model=HealthResponse,
     )
     async def health() -> HealthResponse:
-        runtime = app.state.runtime
+        runtime = (
+            app.state.runtime
+        )
 
         return HealthResponse(
             status="ok",
@@ -363,9 +578,9 @@ def create_app(
             ),
         )
 
-    # ----------------------------------
-    # Existing stateless endpoint
-    # ----------------------------------
+    # ==================================
+    # Stateless chat
+    # ==================================
 
     @app.post(
         "/chat",
@@ -374,7 +589,18 @@ def create_app(
     async def chat(
         req: ChatRequest,
     ) -> ChatResponse:
-        runtime = app.state.runtime
+        """
+        Stateless chat endpoint.
+
+        In production this goes through
+        CachedLLMRuntime, so identical
+        generation requests can be served
+        from Redis.
+        """
+
+        runtime = (
+            app.state.runtime
+        )
 
         if not runtime.is_loaded():
             raise HTTPException(
@@ -398,7 +624,9 @@ def create_app(
                     temperature=(
                         req.temperature
                     ),
-                    top_p=req.top_p,
+                    top_p=(
+                        req.top_p
+                    ),
                 )
             )
 
@@ -434,9 +662,9 @@ def create_app(
             )
         )
 
-    # ----------------------------------
+    # ==================================
     # Persistent conversations
-    # ----------------------------------
+    # ==================================
 
     @app.post(
         "/conversations",
@@ -586,12 +814,22 @@ def create_app(
             SendConversationMessageRequest
         ),
     ) -> ConversationResponse:
+        """
+        Persistent chat endpoint.
+
+        ChatHistoryService receives
+        app_runtime, which means production
+        generation also passes through
+        CachedLLMRuntime before persistence.
+        """
+
         service = (
             app.state.chat_history
         )
 
         if not (
-            app.state.runtime.is_loaded()
+            app.state.runtime
+            .is_loaded()
         ):
             raise HTTPException(
                 status_code=503,
@@ -629,9 +867,9 @@ def create_app(
             conversation
         )
 
-    # ----------------------------------
+    # ==================================
     # Error handling
-    # ----------------------------------
+    # ==================================
 
     @app.exception_handler(
         RequestValidationError
