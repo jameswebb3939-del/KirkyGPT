@@ -28,13 +28,22 @@ def data_dir(project_root: Path) -> Path:
 
 
 @pytest.fixture(scope="session")
-def sft_jsonl_path(data_dir: Path) -> Path:
+def sft_jsonl_path(
+    data_dir: Path,
+) -> Path:
     """
-    Return <root>/data/sft_followups.jsonl
+    Return the canonical SFT dataset.
     """
-    path = data_dir / "sft_followups.jsonl"
+    path = (
+        data_dir
+        / "sft_followups.jsonl"
+    )
+
     if not path.exists():
-        raise FileNotFoundError(f"SFT JSONL file not found: {path}")
+        raise FileNotFoundError(
+            f"SFT JSONL file not found: {path}"
+        )
+
     return path
 
 

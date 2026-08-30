@@ -125,21 +125,22 @@ def create_app(
             runtime
         )
 
-    app = FastAPI(
-        title="LLM Followups Server",
-        version="1.0.0",
-        description=(
-            "Generate and persist follow-up "
-            "question conversations."
-        ),
-    )
+    @asynccontextmanager
+    async def lifespan(
+        app: FastAPI,
+    ) -> AsyncIterator[None]:
+        """
+        Application lifespan.
 
-    app.state.runtime = runtime
-    app.state.settings = settings
-    app.state.chat_history = chat_history
+        Startup:
+        - initialise SQLite tables
+        - load the LLM runtime
 
-    @app.on_event("startup")
-    async def on_startup() -> None:
+        Shutdown:
+        - currently no explicit resources
+          require cleanup
+        """
+
         logger.info(
             "Initializing database..."
         )
@@ -162,12 +163,32 @@ def create_app(
                 "Failed to load LLM runtime: %s",
                 exc,
             )
+
             raise
 
-    @app.get(
-        "/health",
-        response_model=HealthResponse,
+        # Application is now ready to
+        # receive HTTP requests.
+        yield
+
+        logger.info(
+            "Application shutting down..."
+        )
+
+    app = FastAPI(
+        title="LLM Followups Server",
+        version="1.0.0",
+        description=(
+            "Generate and persist follow-up "
+            "question conversations."
+        ),
+        lifespan=lifespan,
     )
+
+    app.state.runtime = runtime
+    app.state.settings = settings
+    app.state.chat_history = chat_history
+
+    @app.get("/health", response_model=HealthResponse)
     async def health() -> HealthResponse:
         runtime = app.state.runtime
 

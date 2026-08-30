@@ -1,72 +1,193 @@
 from __future__ import annotations
 
+import argparse
 import asyncio
-from argparse import ArgumentParser
+import tempfile
 from pathlib import Path
 
-from llm_followups.eval.batch_eval import run_batch_evaluation
+from dataset_split import (
+    read_jsonl,
+    split_rows,
+    write_jsonl,
+)
+
+from llm_followups.eval.batch_eval import (
+    run_batch_evaluation,
+)
 
 
-def main() -> None:
-    parser = ArgumentParser(
-        description="Run batch evaluation of follow-up question generation."
+DEFAULT_DATASET = Path(
+    "data/sft_followups.jsonl"
+)
+
+DEFAULT_MODEL = Path(
+    "outputs/followups"
+)
+
+DEFAULT_OUTPUT = Path(
+    "eval_results/followups"
+)
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Evaluate the trained model "
+            "against the deterministic "
+            "held-out portion of the "
+            "canonical v3 dataset."
+        )
     )
+
     parser.add_argument(
-        "--data_path",
+        "--dataset",
         type=Path,
-        required=True,
-        help="Path to the evaluation dataset (JSONL format).",
+        default=DEFAULT_DATASET,
     )
+
     parser.add_argument(
-        "--output_dir",
+        "--model-path",
         type=Path,
-        required=True,
-        help="Directory to save evaluation results.",
+        default=DEFAULT_MODEL,
     )
+
     parser.add_argument(
-        "--model_path",
+        "--output-dir",
         type=Path,
-        default=None,
-        help="Optional path to the model to evaluate.",
+        default=DEFAULT_OUTPUT,
     )
+
+    parser.add_argument(
+        "--eval-fraction",
+        type=float,
+        default=0.10,
+    )
+
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+    )
+
     parser.add_argument(
         "--limit",
         type=int,
         default=None,
-        help="Optional limit on number of examples to evaluate.",
     )
+
     parser.add_argument(
-        "--min_questions",
+        "--min-questions",
         type=int,
         default=3,
-        help="Minimum number of follow-up questions required for valid output.",
     )
+
     parser.add_argument(
-        "--bullet_style",
-        type=str,
-        choices=["dash", "asterisk", "either"],
+        "--bullet-style",
+        choices=[
+            "dash",
+            "asterisk",
+            "either",
+        ],
         default="either",
-        help="Accepted bullet style for generated follow-up questions.",
     )
 
-    args = parser.parse_args()
+    return parser.parse_args()
 
-    results = asyncio.run(
-        run_batch_evaluation(
-            data_path=args.data_path,
-            output_dir=args.output_dir,
-            model_path=args.model_path,
-            limit=args.limit,
-            min_questions=args.min_questions,
-            bullet_style=args.bullet_style,
+
+async def run(
+    args: argparse.Namespace,
+) -> dict:
+    rows = read_jsonl(
+        args.dataset.resolve()
+    )
+
+    train_rows, eval_rows = (
+        split_rows(
+            rows,
+            eval_fraction=(
+                args.eval_fraction
+            ),
+            seed=args.seed,
         )
     )
 
     print(
-        "Batch evaluation completed. "
-        f"Results saved to: {results['csv_path']} and {results['json_path']}"
+        f"Canonical examples: "
+        f"{len(rows)}"
     )
-    print(f"Summary: {results['summary']}")
+
+    print(
+        f"Training partition: "
+        f"{len(train_rows)}"
+    )
+
+    print(
+        f"Held-out evaluation partition: "
+        f"{len(eval_rows)}"
+    )
+
+    print(
+        f"Split seed: {args.seed}"
+    )
+
+    # Evaluation split is temporary.
+    with tempfile.TemporaryDirectory(
+        prefix="ec_pro_eval_"
+    ) as temp_dir:
+        eval_path = (
+            Path(temp_dir)
+            / "eval.jsonl"
+        )
+
+        write_jsonl(
+            eval_path,
+            eval_rows,
+        )
+
+        return await run_batch_evaluation(
+            data_path=eval_path,
+            output_dir=(
+                args.output_dir
+            ),
+            model_path=(
+                args.model_path
+            ),
+            limit=args.limit,
+            min_questions=(
+                args.min_questions
+            ),
+            bullet_style=(
+                args.bullet_style
+            ),
+        )
+
+
+def main() -> None:
+    args = parse_args()
+
+    results = asyncio.run(
+        run(args)
+    )
+
+    print()
+    print(
+        "Batch evaluation completed."
+    )
+
+    print(
+        "CSV: "
+        f"{results['csv_path']}"
+    )
+
+    print(
+        "JSON: "
+        f"{results['json_path']}"
+    )
+
+    print(
+        "Summary: "
+        f"{results['summary']}"
+    )
 
 
 if __name__ == "__main__":

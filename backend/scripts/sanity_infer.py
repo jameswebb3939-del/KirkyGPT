@@ -170,7 +170,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Run sanity inference on a fine-tuned follow-up question model."
     )
-    parser.add_argument("--model-path", type=Path, required=True)
+    parser.add_argument("--model-path", type=Path, default=Path("outputs/followups"))
     parser.add_argument("--prompts", type=Path, default=None)
     parser.add_argument("--k", type=int, default=3)
     parser.add_argument("--device", choices=["cpu", "cuda", "auto"], default="auto")

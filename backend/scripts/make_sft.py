@@ -812,44 +812,73 @@ def generate_dataset(
     return examples
 
 
-def split_train_eval(
-    examples: list[dict[str, Any]],
-    eval_size: int,
-    seed: int,
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    copied = list(examples)
-    random.Random(seed).shuffle(copied)
-
-    eval_examples = copied[:eval_size]
-    train_examples = copied[eval_size:]
-
-    return train_examples, eval_examples
-
-
 # ----------------------------
 # CLI
 # ----------------------------
 
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Generate a diverse JSONL SFT dataset for follow-up question generation."
+        description=(
+            "Generate the canonical JSONL "
+            "SFT dataset for follow-up "
+            "question generation."
+        )
     )
 
-    parser.add_argument("--out", type=Path, default=Path("data/sft_followups.jsonl"))
-    parser.add_argument("--report-out", type=Path, default=Path("data/sft_followups_report.txt"))
+    parser.add_argument(
+        "--out",
+        type=Path,
+        default=Path("data/sft_followups.jsonl"),
+    )
 
-    parser.add_argument("--train-out", type=Path, default=None)
-    parser.add_argument("--eval-out", type=Path, default=None)
-    parser.add_argument("--eval-size", type=int, default=0)
+    parser.add_argument(
+        "--report-out",
+        type=Path,
+        default=Path("data/sft_followups_report.txt"),
+    )
 
-    parser.add_argument("--n", type=int, default=2000)
-    parser.add_argument("--k", type=int, default=3)
-    parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--max-question-repeat", type=int, default=30)
+    parser.add_argument(
+        "--n",
+        type=int,
+        default=2000,
+    )
 
-    parser.add_argument("--max-new-tokens", type=int, default=128)
-    parser.add_argument("--temperature", type=float, default=0.2)
-    parser.add_argument("--top-p", type=float, default=0.9)
+    parser.add_argument(
+        "--k",
+        type=int,
+        default=3,
+    )
+
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+    )
+
+    parser.add_argument(
+        "--max-question-repeat",
+        type=int,
+        default=30,
+    )
+
+    parser.add_argument(
+        "--max-new-tokens",
+        type=int,
+        default=128,
+    )
+
+    parser.add_argument(
+        "--temperature",
+        type=float,
+        default=0.2,
+    )
+
+    parser.add_argument(
+        "--top-p",
+        type=float,
+        default=0.9,
+    )
 
     return parser.parse_args()
 
@@ -857,59 +886,116 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
 
-    if args.eval_size < 0:
-        raise SystemExit("--eval-size cannot be negative")
+    if args.n < 1:
+        raise SystemExit(
+            "--n must be at least 1"
+        )
 
-    if args.eval_size >= args.n:
-        raise SystemExit("--eval-size must be smaller than --n")
+    if args.k < 1:
+        raise SystemExit(
+            "--k must be at least 1"
+        )
 
     examples = generate_dataset(
         n=args.n,
         k=args.k,
         seed=args.seed,
-        max_question_repeat=args.max_question_repeat,
-        max_new_tokens=args.max_new_tokens,
-        temperature=args.temperature,
+        max_question_repeat=(
+            args.max_question_repeat
+        ),
+        max_new_tokens=(
+            args.max_new_tokens
+        ),
+        temperature=(
+            args.temperature
+        ),
         top_p=args.top_p,
     )
 
-    stats = validate_examples(examples, k=args.k)
+    stats = validate_examples(
+        examples,
+        k=args.k,
+    )
 
-    if stats["strict_format_failures"] != 0:
+    if (
+        stats[
+            "strict_format_failures"
+        ]
+        != 0
+    ):
         raise SystemExit(
-            f"Generated dataset has {stats['strict_format_failures']} strict format failures."
+            "Generated dataset has "
+            f"{stats['strict_format_failures']} "
+            "strict format failures."
         )
 
-    if args.train_out is not None or args.eval_out is not None or args.eval_size > 0:
-        if args.train_out is None or args.eval_out is None:
-            raise SystemExit("Use --train-out and --eval-out together when splitting.")
-
-        train_examples, eval_examples = split_train_eval(
-            examples=examples,
-            eval_size=args.eval_size,
-            seed=args.seed,
+    if args.out.exists():
+        raise SystemExit(
+            "Refusing to overwrite existing dataset: "
+            f"{args.out}\n"
+            "Choose a different --out path if you "
+            "want to generate another dataset."
         )
 
-        write_jsonl(args.train_out, train_examples)
-        write_jsonl(args.eval_out, eval_examples)
+    # Only ONE canonical dataset is
+    # persisted.
+    write_jsonl(
+        args.out,
+        examples,
+    )
 
-        print(f"Wrote train dataset: {args.train_out} ({len(train_examples)} examples)")
-        print(f"Wrote eval dataset:  {args.eval_out} ({len(eval_examples)} examples)")
+    write_report(
+        args.report_out,
+        stats,
+    )
 
-    else:
-        write_jsonl(args.out, examples)
-        print(f"Wrote dataset: {args.out} ({len(examples)} examples)")
+    print(
+        "Wrote canonical dataset: "
+        f"{args.out}"
+    )
 
-    write_report(args.report_out, stats)
-    print(f"Wrote report:  {args.report_out}")
+    print(
+        f"Examples: {len(examples)}"
+    )
+
+    print(
+        "Wrote validation report: "
+        f"{args.report_out}"
+    )
 
     print()
     print("Validation summary:")
-    print(f"Examples: {stats['examples']}")
-    print(f"Strict format failures: {stats['strict_format_failures']}")
-    print(f"Unique question lines: {stats['unique_question_lines']} / {stats['total_question_lines']}")
-    print(f"Unique assistant responses: {stats['unique_responses']} / {stats['total_responses']}")
-    print(f"Unique prompts: {stats['unique_prompts']} / {stats['total_prompts']}")
+
+    print(
+        f"Examples: "
+        f"{stats['examples']}"
+    )
+
+    print(
+        "Strict format failures: "
+        f"{stats['strict_format_failures']}"
+    )
+
+    print(
+        "Unique question lines: "
+        f"{stats['unique_question_lines']} "
+        "/ "
+        f"{stats['total_question_lines']}"
+    )
+
+    print(
+        "Unique assistant responses: "
+        f"{stats['unique_responses']} "
+        "/ "
+        f"{stats['total_responses']}"
+    )
+
+    print(
+        "Unique prompts: "
+        f"{stats['unique_prompts']} "
+        "/ "
+        f"{stats['total_prompts']}"
+    )
 
     return 0
 
