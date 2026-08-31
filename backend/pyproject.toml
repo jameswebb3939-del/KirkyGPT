@@ -2,6 +2,7 @@
 requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
+
 [project]
 name = "llm-followups"
 version = "0.1.0"
@@ -29,7 +30,9 @@ dependencies = [
   "sqlalchemy",
   "aiosqlite",
   "redis>=5.0",
+  "prometheus-client>=0.22",
 ]
+
 
 [project.optional-dependencies]
 
@@ -37,27 +40,54 @@ dev = [
   "pytest",
   "pytest-asyncio",
   "black",
-  "ruff"
+  "ruff",
 ]
+
+loadtest = [
+  "locust>=2.32",
+]
+
 
 [project.scripts]
 llm-followups = "llm_followups.client.cli:main"
 
+
 [tool.setuptools]
 package-dir = {"" = "src"}
+
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
+
 [tool.pytest.ini_options]
 minversion = "8.0"
-testpaths = ["tests"]
-python_files = ["test_*.py", "*_test.py"]
-python_classes = ["Test*"]
-python_functions = ["test_*"]
-pythonpath = ["src"]
+
+testpaths = [
+  "tests"
+]
+
+python_files = [
+  "test_*.py",
+  "*_test.py",
+]
+
+python_classes = [
+  "Test*"
+]
+
+python_functions = [
+  "test_*"
+]
+
+pythonpath = [
+  "src"
+]
+
 addopts = "-ra -q"
+
 asyncio_mode = "strict"
+
 markers = [
   "unit: unit tests",
   "integration: integration tests",

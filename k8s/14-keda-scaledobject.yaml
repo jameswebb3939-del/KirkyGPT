@@ -1,0 +1,71 @@
+apiVersion: keda.sh/v1alpha1
+
+kind: ScaledObject
+
+metadata:
+  name: ec-pro-inference
+  namespace: ec-pro
+
+
+spec:
+  scaleTargetRef:
+    name:
+      ec-pro-inference
+
+  pollingInterval: 15
+
+  cooldownPeriod: 120
+
+  minReplicaCount: 1
+
+  maxReplicaCount: 8
+
+
+  advanced:
+    horizontalPodAutoscalerConfig:
+
+      behavior:
+
+        scaleUp:
+          stabilizationWindowSeconds: 0
+
+          policies:
+            - type: Percent
+              value: 100
+              periodSeconds: 30
+
+            - type: Pods
+              value: 2
+              periodSeconds: 30
+
+          selectPolicy: Max
+
+
+        scaleDown:
+          stabilizationWindowSeconds: 300
+
+          policies:
+            - type: Percent
+              value: 25
+              periodSeconds: 60
+
+
+  triggers:
+    - type: prometheus
+
+      metadata:
+        serverAddress:
+          http://prometheus-operated.monitoring.svc.cluster.local:9090
+
+        query: |
+          sum(
+            ec_pro_native_queue_depth{
+              namespace="ec-pro"
+            }
+          )
+
+        threshold: "8"
+
+        activationThreshold: "1"
+
+        ignoreNullValues: "false"

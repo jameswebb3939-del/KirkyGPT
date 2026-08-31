@@ -215,6 +215,24 @@ class NativeLLMRuntime:
     def adapter_loaded(self) -> bool:
         return False
 
+    def queue_depth(
+        self,
+    ) -> int:
+        """
+        Return the number of requests
+        currently waiting in the native
+        C++ batch scheduler.
+
+        Returns zero while the runtime
+        scheduler has not been created.
+        """
+        if self._scheduler is None:
+            return 0
+
+        return int(
+            self._scheduler.queue_depth()
+        )
+
     def make_request(
         self,
         messages: Sequence[ChatMessage],

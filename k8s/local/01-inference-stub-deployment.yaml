@@ -1,0 +1,463 @@
+apiVersion: apps/v1
+kind: Deployment
+
+metadata:
+  name: ec-pro-inference-stub
+  namespace: ec-pro
+  labels:
+    app: ec-pro-inference-stub
+
+spec:
+  replicas: 1
+
+  selector:
+    matchLabels:
+      app: ec-pro-inference-stub
+
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+
+  template:
+    metadata:
+      labels:
+        app: ec-pro-inference-stub
+
+    spec:
+      terminationGracePeriodSeconds: 10
+
+      containers:
+        - name: inference-stub
+
+          image: python:3.13-slim
+
+          imagePullPolicy: IfNotPresent
+
+          command:
+            - python
+            - -u
+            - -c
+
+          args:
+            - |
+              from __future__ import annotations
+
+              import json
+              import os
+              import threading
+              import time
+
+              from http.server import (
+                  BaseHTTPRequestHandler,
+                  ThreadingHTTPServer,
+              )
+
+
+              HOST = "0.0.0.0"
+              PORT = 8000
+
+              POD_NAME = os.getenv(
+                  "POD_NAME",
+                  "unknown-pod",
+              )
+
+              MAX_CONCURRENT = int(
+                  os.getenv(
+                      "STUB_MAX_CONCURRENT",
+                      "1",
+                  )
+              )
+
+              INFERENCE_DELAY_SECONDS = float(
+                  os.getenv(
+                      "STUB_INFERENCE_DELAY_SECONDS",
+                      "1.0",
+                  )
+              )
+
+
+              worker_slots = threading.Semaphore(
+                  MAX_CONCURRENT
+              )
+
+              state_lock = threading.Lock()
+
+              waiting_requests = 0
+              active_requests = 0
+              completed_requests = 0
+
+
+              def state_snapshot():
+                  with state_lock:
+                      return (
+                          waiting_requests,
+                          active_requests,
+                          completed_requests,
+                      )
+
+
+              class Handler(
+                  BaseHTTPRequestHandler
+              ):
+                  def _send_json(
+                      self,
+                      status_code: int,
+                      payload: dict,
+                  ) -> None:
+                      body = json.dumps(
+                          payload
+                      ).encode(
+                          "utf-8"
+                      )
+
+                      self.send_response(
+                          status_code
+                      )
+
+                      self.send_header(
+                          "Content-Type",
+                          "application/json",
+                      )
+
+                      self.send_header(
+                          "Content-Length",
+                          str(
+                              len(body)
+                          ),
+                      )
+
+                      self.end_headers()
+
+                      self.wfile.write(
+                          body
+                      )
+
+
+                  def _send_text(
+                      self,
+                      status_code: int,
+                      body_text: str,
+                      content_type: str,
+                  ) -> None:
+                      body = body_text.encode(
+                          "utf-8"
+                      )
+
+                      self.send_response(
+                          status_code
+                      )
+
+                      self.send_header(
+                          "Content-Type",
+                          content_type,
+                      )
+
+                      self.send_header(
+                          "Content-Length",
+                          str(
+                              len(body)
+                          ),
+                      )
+
+                      self.end_headers()
+
+                      self.wfile.write(
+                          body
+                      )
+
+
+                  def do_GET(
+                      self,
+                  ) -> None:
+                      if self.path == "/health":
+                          self._send_json(
+                              200,
+                              {
+                                  "status": "ok",
+                                  "pod": POD_NAME,
+                              },
+                          )
+                          return
+
+
+                      if self.path == "/ready":
+                          self._send_json(
+                              200,
+                              {
+                                  "status": "ready",
+                                  "pod": POD_NAME,
+                              },
+                          )
+                          return
+
+
+                      if self.path == "/instance":
+                          self._send_json(
+                              200,
+                              {
+                                  "pod": POD_NAME,
+                              },
+                          )
+                          return
+
+
+                      if self.path == "/metrics":
+                          (
+                              queue_depth,
+                              active,
+                              completed,
+                          ) = state_snapshot()
+
+                          metrics = (
+                              "# HELP "
+                              "ec_pro_native_queue_depth "
+                              "Number of inference requests "
+                              "waiting for a worker.\n"
+                              "# TYPE "
+                              "ec_pro_native_queue_depth "
+                              "gauge\n"
+                              f"ec_pro_native_queue_depth "
+                              f"{queue_depth}\n"
+                              "# HELP "
+                              "ec_pro_stub_active_requests "
+                              "Number of inference requests "
+                              "currently executing.\n"
+                              "# TYPE "
+                              "ec_pro_stub_active_requests "
+                              "gauge\n"
+                              f"ec_pro_stub_active_requests "
+                              f"{active}\n"
+                              "# HELP "
+                              "ec_pro_stub_completed_requests_total "
+                              "Number of completed inference "
+                              "requests.\n"
+                              "# TYPE "
+                              "ec_pro_stub_completed_requests_total "
+                              "counter\n"
+                              "ec_pro_stub_completed_requests_total "
+                              f"{completed}\n"
+                          )
+
+                          self._send_text(
+                              200,
+                              metrics,
+                              (
+                                  "text/plain; "
+                                  "version=0.0.4; "
+                                  "charset=utf-8"
+                              ),
+                          )
+
+                          return
+
+
+                      self._send_json(
+                          404,
+                          {
+                              "detail": "Not found",
+                              "pod": POD_NAME,
+                          },
+                      )
+
+
+                  def do_POST(
+                      self,
+                  ) -> None:
+                      global waiting_requests
+                      global active_requests
+                      global completed_requests
+
+                      if self.path != "/chat":
+                          self._send_json(
+                              404,
+                              {
+                                  "detail": "Not found",
+                                  "pod": POD_NAME,
+                              },
+                          )
+                          return
+
+
+                      content_length = int(
+                          self.headers.get(
+                              "Content-Length",
+                              "0",
+                          )
+                      )
+
+                      raw_body = self.rfile.read(
+                          content_length
+                      )
+
+
+                      try:
+                          request_body = json.loads(
+                              raw_body or b"{}"
+                          )
+
+                      except json.JSONDecodeError:
+                          self._send_json(
+                              400,
+                              {
+                                  "detail":
+                                      "Invalid JSON",
+                                  "pod":
+                                      POD_NAME,
+                              },
+                          )
+                          return
+
+
+                      messages = request_body.get(
+                          "messages"
+                      )
+
+                      if (
+                          not isinstance(
+                              messages,
+                              list,
+                          )
+                          or not messages
+                      ):
+                          self._send_json(
+                              422,
+                              {
+                                  "detail":
+                                      (
+                                          "messages must be "
+                                          "a non-empty list"
+                                      ),
+                                  "pod":
+                                      POD_NAME,
+                              },
+                          )
+                          return
+
+
+                      with state_lock:
+                          waiting_requests += 1
+
+
+                      worker_slots.acquire()
+
+
+                      with state_lock:
+                          waiting_requests -= 1
+                          active_requests += 1
+
+
+                      try:
+                          time.sleep(
+                              INFERENCE_DELAY_SECONDS
+                          )
+
+                          self._send_json(
+                              200,
+                              {
+                                  "response_text":
+                                      (
+                                          "- What load level "
+                                          "should be tested?\n"
+                                          "- Which latency SLO "
+                                          "matters most?\n"
+                                          "- How many replicas "
+                                          "should the service use?"
+                                      ),
+                                  "served_by":
+                                      POD_NAME,
+                              },
+                          )
+
+                      finally:
+                          with state_lock:
+                              active_requests -= 1
+                              completed_requests += 1
+
+                          worker_slots.release()
+
+
+                  def log_message(
+                      self,
+                      format: str,
+                      *args,
+                  ) -> None:
+                      print(
+                          (
+                              f"[{POD_NAME}] "
+                              + format
+                          )
+                          % args,
+                          flush=True,
+                      )
+
+
+              server = ThreadingHTTPServer(
+                  (
+                      HOST,
+                      PORT,
+                  ),
+                  Handler,
+              )
+
+
+              print(
+                  (
+                      "EC Pro inference stub "
+                      f"starting on {HOST}:{PORT} "
+                      f"pod={POD_NAME} "
+                      f"workers={MAX_CONCURRENT} "
+                      f"delay={INFERENCE_DELAY_SECONDS}s"
+                  ),
+                  flush=True,
+              )
+
+
+              server.serve_forever()
+
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+
+            - name: STUB_MAX_CONCURRENT
+              value: "1"
+
+            - name: STUB_INFERENCE_DELAY_SECONDS
+              value: "1.0"
+
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+
+            limits:
+              cpu: 250m
+              memory: 128Mi
+
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+
+            initialDelaySeconds: 1
+            periodSeconds: 3
+            timeoutSeconds: 2
+            failureThreshold: 3
+
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+
+            initialDelaySeconds: 3
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3

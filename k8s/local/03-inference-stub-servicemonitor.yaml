@@ -1,0 +1,24 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+
+metadata:
+  name: ec-pro-inference-stub
+  namespace: ec-pro
+
+  labels:
+    release: monitoring
+
+spec:
+  selector:
+    matchLabels:
+      app: ec-pro-inference-stub
+
+  namespaceSelector:
+    matchNames:
+      - ec-pro
+
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 5s
+      scrapeTimeout: 3s

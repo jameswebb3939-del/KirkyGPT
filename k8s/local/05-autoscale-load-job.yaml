@@ -1,0 +1,176 @@
+apiVersion: batch/v1
+kind: Job
+
+metadata:
+  name: autoscale-load
+  namespace: ec-pro
+
+spec:
+  backoffLimit: 0
+
+  template:
+    metadata:
+      labels:
+        app: autoscale-load
+
+    spec:
+      restartPolicy: Never
+
+      containers:
+        - name: load-generator
+
+          image: python:3.13-slim
+
+          imagePullPolicy: IfNotPresent
+
+          command:
+            - python
+            - -u
+            - -c
+
+          args:
+            - |
+              from concurrent.futures import ThreadPoolExecutor
+              import json
+              import time
+              import urllib.request
+
+
+              URL = (
+                  "http://ec-pro-inference"
+                  ".ec-pro.svc.cluster.local"
+                  ":8000/chat"
+              )
+
+              DURATION_SECONDS = 90
+              WORKERS = 30
+
+
+              payload = json.dumps(
+                  {
+                      "messages": [
+                          {
+                              "role": "user",
+                              "content": (
+                                  "Autoscaling "
+                                  "load test."
+                              ),
+                          }
+                      ]
+                  }
+              ).encode("utf-8")
+
+
+              deadline = (
+                  time.monotonic()
+                  + DURATION_SECONDS
+              )
+
+
+              def worker(
+                  worker_id: int,
+              ) -> tuple[int, int, int]:
+                  completed = 0
+                  failed = 0
+
+                  while (
+                      time.monotonic()
+                      < deadline
+                  ):
+                      request = (
+                          urllib.request.Request(
+                              URL,
+                              data=payload,
+                              headers={
+                                  "Content-Type":
+                                      "application/json"
+                              },
+                              method="POST",
+                          )
+                      )
+
+                      try:
+                          with urllib.request.urlopen(
+                              request,
+                              timeout=60,
+                          ) as response:
+                              response.read()
+
+                              if (
+                                  response.status
+                                  == 200
+                              ):
+                                  completed += 1
+                              else:
+                                  failed += 1
+
+                      except Exception as exc:
+                          failed += 1
+
+                          print(
+                              (
+                                  f"worker={worker_id} "
+                                  f"error={exc}"
+                              ),
+                              flush=True,
+                          )
+
+                  return (
+                      worker_id,
+                      completed,
+                      failed,
+                  )
+
+
+              print(
+                  (
+                      "Starting autoscaling "
+                      f"load test: "
+                      f"{WORKERS} workers, "
+                      f"{DURATION_SECONDS}s"
+                  ),
+                  flush=True,
+              )
+
+
+              with ThreadPoolExecutor(
+                  max_workers=WORKERS
+              ) as executor:
+                  results = list(
+                      executor.map(
+                          worker,
+                          range(WORKERS),
+                      )
+                  )
+
+
+              total_completed = sum(
+                  result[1]
+                  for result in results
+              )
+
+              total_failed = sum(
+                  result[2]
+                  for result in results
+              )
+
+
+              print(
+                  (
+                      "Load test complete. "
+                      f"completed="
+                      f"{total_completed} "
+                      f"failed="
+                      f"{total_failed}"
+                  ),
+                  flush=True,
+              )
+
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+
+            limits:
+              cpu: 500m
+              memory: 128Mi

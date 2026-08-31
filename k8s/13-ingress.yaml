@@ -1,0 +1,28 @@
+apiVersion: networking.k8s.io/v1
+
+kind: Ingress
+
+metadata:
+  name: ec-pro-inference
+  namespace: ec-pro
+
+
+spec:
+  ingressClassName: nginx
+
+  rules:
+    - host:
+        ec-pro.example.com
+
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+
+            backend:
+              service:
+                name:
+                  ec-pro-inference
+
+                port:
+                  number: 8000

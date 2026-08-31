@@ -1,0 +1,143 @@
+apiVersion: monitoring.coreos.com/v1
+
+kind: PrometheusRule
+
+metadata:
+  name:
+    ec-pro-inference-slos
+
+  namespace:
+    ec-pro
+
+
+spec:
+  groups:
+
+    - name:
+        ec-pro-inference
+
+      rules:
+
+        # --------------------------
+        # Error rate
+        # --------------------------
+
+        - alert:
+            ECProHighErrorRate
+
+          expr: |
+            (
+              sum(
+                rate(
+                  ec_pro_http_requests_total{
+                    namespace="ec-pro",
+                    route="/chat",
+                    status_code=~"5.."
+                  }[5m]
+                )
+              )
+              /
+              clamp_min(
+                sum(
+                  rate(
+                    ec_pro_http_requests_total{
+                      namespace="ec-pro",
+                      route="/chat"
+                    }[5m]
+                  )
+                ),
+                0.001
+              )
+            ) > 0.01
+
+          for: 10m
+
+          labels:
+            severity: warning
+
+          annotations:
+            summary: >-
+              EC Pro inference
+              error rate exceeds 1%
+
+
+        # --------------------------
+        # P95 latency
+        # --------------------------
+
+        - alert:
+            ECProP95LatencyHigh
+
+          expr: |
+            histogram_quantile(
+              0.95,
+              sum by (le) (
+                rate(
+                  ec_pro_inference_duration_seconds_bucket{
+                    namespace="ec-pro"
+                  }[5m]
+                )
+              )
+            ) > 2.5
+
+          for: 10m
+
+          labels:
+            severity: warning
+
+          annotations:
+            summary: >-
+              EC Pro p95 inference
+              latency exceeds
+              2.5 seconds
+
+
+        # --------------------------
+        # Queue saturation
+        # --------------------------
+
+        - alert:
+            ECProInferenceQueueBacklog
+
+          expr: |
+            sum(
+              ec_pro_native_queue_depth{
+                namespace="ec-pro"
+              }
+            ) > 16
+
+          for: 5m
+
+          labels:
+            severity: warning
+
+          annotations:
+            summary: >-
+              EC Pro inference
+              queue is persistently
+              backlogged
+
+
+        # --------------------------
+        # No ready runtimes
+        # --------------------------
+
+        - alert:
+            ECProNoLoadedRuntime
+
+          expr: |
+            sum(
+              ec_pro_runtime_loaded{
+                namespace="ec-pro"
+              }
+            ) < 1
+
+          for: 2m
+
+          labels:
+            severity: critical
+
+          annotations:
+            summary: >-
+              No EC Pro inference
+              runtime is loaded

@@ -1,0 +1,139 @@
+apiVersion: apps/v1
+
+kind: Deployment
+
+metadata:
+  name: ec-pro-inference
+  namespace: ec-pro
+
+  labels:
+    app: ec-pro-inference
+
+
+spec:
+  replicas: 1
+
+  selector:
+    matchLabels:
+      app: ec-pro-inference
+
+  strategy:
+    type: RollingUpdate
+
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+
+
+  template:
+    metadata:
+      labels:
+        app: ec-pro-inference
+
+    spec:
+      terminationGracePeriodSeconds: 90
+
+      containers:
+        - name: inference
+
+          image:
+            ghcr.io/YOUR_GITHUB_USERNAME/ec-pro-inference-gpu:latest
+
+          imagePullPolicy:
+            IfNotPresent
+
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+
+          env:
+            - name: PYTHONPATH
+              value: /app/src
+
+            - name: NATIVE_MODEL_PATH
+              value: /models/followups.gguf
+
+            - name: NATIVE_N_CTX
+              value: "2048"
+
+            - name: NATIVE_N_BATCH
+              value: "512"
+
+            - name: NATIVE_THREADS
+              value: "0"
+
+            - name: NATIVE_THREADS_BATCH
+              value: "0"
+
+            - name: NATIVE_GPU_LAYERS
+              value: "-1"
+
+            - name: NATIVE_MAX_BATCH_SIZE
+              value: "8"
+
+            - name: NATIVE_MAX_QUEUE_SIZE
+              value: "256"
+
+            - name: NATIVE_BATCH_WAIT_MS
+              value: "4"
+
+            - name: NATIVE_BATCH_PARALLELISM
+              value: "1"
+
+            - name: POD_NAME
+
+              valueFrom:
+                fieldRef:
+                  fieldPath:
+                    metadata.name
+
+          resources:
+            requests:
+              cpu: "2"
+              memory: 4Gi
+
+            limits:
+              cpu: "4"
+              memory: 8Gi
+
+              nvidia.com/gpu: 1
+
+          startupProbe:
+            httpGet:
+              path: /ready
+              port: http
+
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 60
+
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+
+            periodSeconds: 20
+            timeoutSeconds: 2
+            failureThreshold: 3
+
+          volumeMounts:
+            - name: model
+              mountPath: /models
+              readOnly: true
+
+      volumes:
+        - name: model
+
+          persistentVolumeClaim:
+            claimName:
+              ec-pro-models
