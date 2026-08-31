@@ -150,6 +150,10 @@ if(EC_PRO_NATIVE_BUILD_TESTS)
         REQUIRED
     )
 
+    #
+    # Batch scheduler tests
+    #
+
     add_executable(
         ec_pro_native_scheduler_tests
 
@@ -191,5 +195,53 @@ if(EC_PRO_NATIVE_BUILD_TESTS)
             ec_pro_native_scheduler_tests
         COMMAND
             ec_pro_native_scheduler_tests
+    )
+
+    #
+    # Token processor tests
+    #
+
+    add_executable(
+        ec_pro_native_token_processor_tests
+
+        tests/test_token_processor.cpp
+        src/token_processor.cpp
+    )
+
+    target_include_directories(
+        ec_pro_native_token_processor_tests
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    target_link_libraries(
+        ec_pro_native_token_processor_tests
+        PRIVATE
+            llama
+            Threads::Threads
+    )
+
+    if(MSVC)
+        target_compile_options(
+            ec_pro_native_token_processor_tests
+            PRIVATE
+                /W4
+                /EHsc
+        )
+    else()
+        target_compile_options(
+            ec_pro_native_token_processor_tests
+            PRIVATE
+                -Wall
+                -Wextra
+                -Wpedantic
+        )
+    endif()
+
+    add_test(
+        NAME
+            ec_pro_native_token_processor_tests
+        COMMAND
+            ec_pro_native_token_processor_tests
     )
 endif()
