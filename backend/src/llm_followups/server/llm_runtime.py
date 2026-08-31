@@ -4,7 +4,12 @@ import asyncio
 import logging
 import os
 import time
-from dataclasses import dataclass
+
+from llm_followups.server.runtime_types import (
+    GenerationRequest,
+    GenerationResult,
+)
+
 from pathlib import Path
 from typing import Any, Optional, Sequence
 
@@ -41,24 +46,6 @@ def _take_bullets(text: str, k: int) -> str | None:
     if bullets:
         return "\n".join(bullets[:k]).strip()
     return None
-
-
-@dataclass(frozen=True)
-class GenerationRequest:
-    messages: Sequence[ChatMessage]
-    max_new_tokens: int
-    temperature: float
-    top_p: float
-    seed: int | None
-
-
-@dataclass(frozen=True)
-class GenerationResult:
-    raw_text: str
-    final_text: str
-    used_fallback: bool
-    used_repair: bool
-    latency_ms: int
 
 
 class LLMRuntime:

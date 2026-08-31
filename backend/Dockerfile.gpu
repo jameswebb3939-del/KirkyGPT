@@ -1,5 +1,7 @@
 FROM nvidia/cuda:12.8.1-cudnn-devel-ubuntu24.04 AS build
 
+ARG CUDA_ARCHITECTURES=86
+
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update \
@@ -12,9 +14,9 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 
-# -----------------------------
+# ==================================================
 # Python 3.13 via uv
-# -----------------------------
+# ==================================================
 
 RUN curl -LsSf \
     https://astral.sh/uv/install.sh \
@@ -24,24 +26,14 @@ ENV PATH="/root/.local/bin:${PATH}"
 
 RUN uv python install 3.13
 
-
 WORKDIR /app
 
 
-# -----------------------------
-# Source
-# -----------------------------
+# ==================================================
+# Production Python dependencies
+# ==================================================
 
-COPY pyproject.toml README.md ./
-
-COPY src ./src
-
-COPY native ./native
-
-
-# -----------------------------
-# Python environment
-# -----------------------------
+COPY requirements ./requirements
 
 RUN uv venv \
     --python 3.13 \
@@ -49,33 +41,58 @@ RUN uv venv \
 
 RUN uv pip install \
     --python .venv/bin/python \
-    -e .
+    -r requirements/inference.txt
+
+
+# ==================================================
+# Native build tooling
+#
+# This environment is discarded and is NOT copied
+# into the production image.
+# ==================================================
+
+RUN uv venv \
+    --python 3.13 \
+    .build-venv
 
 RUN uv pip install \
-    --python .venv/bin/python \
+    --python .build-venv/bin/python \
     pybind11 \
     cmake \
     ninja
 
 
-# -----------------------------
-# Native CUDA build
-# -----------------------------
+# ==================================================
+# Application/native source
+# ==================================================
 
-RUN PYBIND11_DIR="$( \
-        .venv/bin/python \
+COPY src ./src
+COPY native ./native
+
+
+# ==================================================
+# Native CUDA build
+# ==================================================
+
+RUN rm -rf native/build \
+    && PYBIND11_DIR="$( \
+        .build-venv/bin/python \
         -m pybind11 \
         --cmakedir \
     )" \
-    && .venv/bin/cmake \
+    && .build-venv/bin/cmake \
         -S native \
         -B native/build \
         -G Ninja \
+        -DCMAKE_MAKE_PROGRAM=/app/.build-venv/bin/ninja \
         -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
         -Dpybind11_DIR="${PYBIND11_DIR}" \
         -DGGML_CUDA=ON \
+        -DGGML_NATIVE=OFF \
+        -DCMAKE_CUDA_ARCHITECTURES="${CUDA_ARCHITECTURES}" \
         -DEC_PRO_NATIVE_BUILD_TESTS=OFF \
-    && .venv/bin/cmake \
+    && .build-venv/bin/cmake \
         --build native/build \
         --config Release
 
@@ -84,42 +101,48 @@ RUN PYBIND11_DIR="$( \
 # Runtime image
 # ==================================================
 
-FROM nvidia/cuda:12.8.1-cudnn-runtime-ubuntu24.04
+FROM nvidia/cuda:12.8.1-base-ubuntu24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update \
     && apt-get install -y \
+        --no-install-recommends \
         ca-certificates \
         libgomp1 \
         libstdc++6 \
+        cuda-cudart-12-8=12.8.90-1 \
+        libcublas-12-8=12.8.4.1-1 \
+        libnccl2=2.25.1-1+cuda12.8 \
     && rm -rf /var/lib/apt/lists/*
-
 
 WORKDIR /app
 
 
-# uv-managed Python used by the venv
+# Python installation backing the uv-created venv.
 COPY --from=build \
     /root/.local/share/uv/python \
     /root/.local/share/uv/python
 
 
+# Only the minimal production Python environment.
 COPY --from=build \
-    /app \
-    /app
+    /app/.venv \
+    /app/.venv
+
+
+# Application source plus the compiled native .so.
+COPY --from=build \
+    /app/src \
+    /app/src
 
 
 ENV PATH="/app/.venv/bin:${PATH}"
-
 ENV PYTHONPATH="/app/src"
 
 ENV SERVER_HOST="0.0.0.0"
-
 ENV SERVER_PORT="8000"
 
-
 EXPOSE 8000
-
 
 CMD ["python", "-m", "uvicorn", "llm_followups.server.inference_app:app", "--host", "0.0.0.0", "--port", "8000"]

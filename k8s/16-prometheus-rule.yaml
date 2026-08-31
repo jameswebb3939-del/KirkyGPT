@@ -1,29 +1,20 @@
 apiVersion: monitoring.coreos.com/v1
-
 kind: PrometheusRule
 
 metadata:
-  name:
-    ec-pro-inference-slos
+  name: ec-pro-inference-alerts
+  namespace: ec-pro
 
-  namespace:
-    ec-pro
-
+  labels:
+    release: monitoring
+    app: ec-pro-inference
 
 spec:
   groups:
-
-    - name:
-        ec-pro-inference
+    - name: ec-pro-inference.availability
 
       rules:
-
-        # --------------------------
-        # Error rate
-        # --------------------------
-
-        - alert:
-            ECProHighErrorRate
+        - alert: ECProHighErrorRateWarning
 
           expr: |
             (
@@ -54,19 +45,69 @@ spec:
 
           labels:
             severity: warning
+            service: ec-pro-inference
 
           annotations:
             summary: >-
-              EC Pro inference
-              error rate exceeds 1%
+              EC Pro inference error rate is above 1%.
+
+            description: >-
+              More than 1% of /chat requests have returned
+              HTTP 5xx responses for at least 10 minutes.
+
+            runbook_url: >-
+              docs/production/runbook.md#high-error-rate
 
 
-        # --------------------------
-        # P95 latency
-        # --------------------------
+        - alert: ECProHighErrorRateCritical
 
-        - alert:
-            ECProP95LatencyHigh
+          expr: |
+            (
+              sum(
+                rate(
+                  ec_pro_http_requests_total{
+                    namespace="ec-pro",
+                    route="/chat",
+                    status_code=~"5.."
+                  }[5m]
+                )
+              )
+              /
+              clamp_min(
+                sum(
+                  rate(
+                    ec_pro_http_requests_total{
+                      namespace="ec-pro",
+                      route="/chat"
+                    }[5m]
+                  )
+                ),
+                0.001
+              )
+            ) > 0.05
+
+          for: 5m
+
+          labels:
+            severity: critical
+            service: ec-pro-inference
+
+          annotations:
+            summary: >-
+              EC Pro inference error rate is above 5%.
+
+            description: >-
+              More than 5% of /chat requests have returned
+              HTTP 5xx responses for at least 5 minutes.
+
+            runbook_url: >-
+              docs/production/runbook.md#high-error-rate
+
+
+    - name: ec-pro-inference.latency
+
+      rules:
+        - alert: ECProP95LatencyHighWarning
 
           expr: |
             histogram_quantile(
@@ -84,20 +125,56 @@ spec:
 
           labels:
             severity: warning
+            service: ec-pro-inference
 
           annotations:
             summary: >-
-              EC Pro p95 inference
-              latency exceeds
-              2.5 seconds
+              EC Pro inference p95 latency is above 2.5 seconds.
+
+            description: >-
+              The p95 inference duration has exceeded the
+              production latency SLO for at least 10 minutes.
+
+            runbook_url: >-
+              docs/production/runbook.md#high-p95-latency
 
 
-        # --------------------------
-        # Queue saturation
-        # --------------------------
+        - alert: ECProP95LatencyHighCritical
 
-        - alert:
-            ECProInferenceQueueBacklog
+          expr: |
+            histogram_quantile(
+              0.95,
+              sum by (le) (
+                rate(
+                  ec_pro_inference_duration_seconds_bucket{
+                    namespace="ec-pro"
+                  }[5m]
+                )
+              )
+            ) > 5
+
+          for: 5m
+
+          labels:
+            severity: critical
+            service: ec-pro-inference
+
+          annotations:
+            summary: >-
+              EC Pro inference p95 latency is above 5 seconds.
+
+            description: >-
+              Severe inference latency has persisted for at
+              least 5 minutes.
+
+            runbook_url: >-
+              docs/production/runbook.md#high-p95-latency
+
+
+    - name: ec-pro-inference.capacity
+
+      rules:
+        - alert: ECProInferenceQueueBacklog
 
           expr: |
             sum(
@@ -110,20 +187,51 @@ spec:
 
           labels:
             severity: warning
+            service: ec-pro-inference
 
           annotations:
             summary: >-
-              EC Pro inference
-              queue is persistently
-              backlogged
+              EC Pro inference queue backlog is elevated.
+
+            description: >-
+              More than 16 inference requests have remained
+              queued across the fleet for at least 5 minutes.
+
+            runbook_url: >-
+              docs/production/runbook.md#queue-backlog
 
 
-        # --------------------------
-        # No ready runtimes
-        # --------------------------
+        - alert: ECProInferenceQueueBacklogCritical
 
-        - alert:
-            ECProNoLoadedRuntime
+          expr: |
+            sum(
+              ec_pro_native_queue_depth{
+                namespace="ec-pro"
+              }
+            ) > 32
+
+          for: 5m
+
+          labels:
+            severity: critical
+            service: ec-pro-inference
+
+          annotations:
+            summary: >-
+              EC Pro inference queue backlog is critical.
+
+            description: >-
+              More than 32 inference requests have remained
+              queued across the fleet for at least 5 minutes.
+
+            runbook_url: >-
+              docs/production/runbook.md#queue-backlog
+
+
+    - name: ec-pro-inference.runtime
+
+      rules:
+        - alert: ECProNoLoadedRuntime
 
           expr: |
             sum(
@@ -136,8 +244,44 @@ spec:
 
           labels:
             severity: critical
+            service: ec-pro-inference
 
           annotations:
             summary: >-
-              No EC Pro inference
-              runtime is loaded
+              No EC Pro inference runtime is loaded.
+
+            description: >-
+              Prometheus has observed no loaded inference
+              runtime for at least 2 minutes.
+
+            runbook_url: >-
+              docs/production/runbook.md#no-loaded-runtime
+
+
+        - alert: ECProInferenceMetricsMissing
+
+          expr: |
+            absent(
+              ec_pro_runtime_loaded{
+                namespace="ec-pro"
+              }
+            )
+
+          for: 5m
+
+          labels:
+            severity: warning
+            service: ec-pro-inference
+
+          annotations:
+            summary: >-
+              EC Pro inference metrics are missing.
+
+            description: >-
+              Prometheus has not received the runtime metric
+              for at least 5 minutes. The ServiceMonitor,
+              service, pod or Prometheus scrape path may be
+              unhealthy.
+
+            runbook_url: >-
+              docs/production/runbook.md#prometheus-scrape-failure

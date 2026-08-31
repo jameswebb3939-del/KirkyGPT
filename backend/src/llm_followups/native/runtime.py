@@ -8,7 +8,7 @@ from typing import Sequence
 
 from llm_followups.native import require_native
 from llm_followups.prompting import canonical_chat_messages
-from llm_followups.server.llm_runtime import (
+from llm_followups.server.runtime_types import (
     GenerationRequest,
     GenerationResult,
 )
