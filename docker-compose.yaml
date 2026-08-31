@@ -1,0 +1,81 @@
+services:
+  redis:
+    image: redis:7-alpine
+
+    ports:
+      - "6379:6379"
+
+    command:
+      [
+        "redis-server",
+        "--save",
+        "",
+        "--appendonly",
+        "no"
+      ]
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "redis-cli",
+          "ping"
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+
+    environment:
+      PYTHONPATH: /app/src
+
+      SERVER_HOST: 0.0.0.0
+      SERVER_PORT: "8000"
+
+      MODEL_NAME: ${MODEL_NAME:-meta-llama/Llama-3.2-1B-Instruct}
+      MODEL_PATH: ${MODEL_PATH:-}
+      DEVICE: ${DEVICE:-cpu}
+
+      REDIS_ENABLED: "true"
+      REDIS_URL: redis://redis:6379/0
+      REDIS_CACHE_TTL_S: ${REDIS_CACHE_TTL_S:-300}
+      REDIS_KEY_PREFIX: ${REDIS_KEY_PREFIX:-ec_pro}
+
+      REDIS_CHAT_CACHE_ENABLED: ${REDIS_CHAT_CACHE_ENABLED:-true}
+      REDIS_CHAT_CACHE_TTL_S: ${REDIS_CHAT_CACHE_TTL_S:-600}
+
+      HF_HOME: /hf-cache
+      HF_TOKEN: ${HF_TOKEN:-}
+
+    volumes:
+      - ./backend/data:/app/data
+      - ./backend/outputs:/app/outputs:ro
+      - hf_cache:/hf-cache
+
+    ports:
+      - "8001:8000"
+
+    depends_on:
+      redis:
+        condition: service_healthy
+
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+
+    ports:
+      - "3000:80"
+
+    depends_on:
+      - backend
+
+
+volumes:
+  hf_cache:

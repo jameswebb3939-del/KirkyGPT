@@ -4,9 +4,11 @@ from pathlib import Path
 import os
 from typing import Literal, Optional
 
-@dataclass(frozen=True) 
+@dataclass(frozen=True)
 class Settings:
-    model_name: str = "meta-llama/Llama-3.2-1B-Instruct"
+    model_name: str = (
+        "meta-llama/Llama-3.2-1B-Instruct"
+    )
     server_host: str = "127.0.0.1"
     server_port: int = 8000
     endpoint_chat: str = "/chat"
@@ -20,11 +22,19 @@ class Settings:
     adapter_path: Path | None = None
     enforce_format: bool = True
     min_questions: int = 3
-    bullet_style: Literal["dash", "asterisk", "either"] = "dash"
+    bullet_style: Literal[
+        "dash",
+        "asterisk",
+        "either",
+    ] = "dash"
+
     redis_enabled: bool = True
-    redis_url: str = ("redis://127.0.0.1:6379/0")
+    redis_url: str = (
+        "redis://127.0.0.1:6379/0"
+    )
     redis_cache_ttl_s: int = 300
     redis_key_prefix: str = "ec_pro"
+
     redis_chat_cache_enabled: bool = True
     redis_chat_cache_ttl_s: int = 600
 
@@ -138,7 +148,7 @@ def get_settings(env: Optional[dict[str, str]] = None) -> Settings:
         redis_cache_ttl_s=redis_cache_ttl_s,
         redis_key_prefix=redis_key_prefix,
         redis_chat_cache_enabled=redis_chat_cache_enabled,
-        redis_chat_cache_ttl_s=redis_cache_ttl_s,
+        redis_chat_cache_ttl_s=redis_chat_cache_ttl_s,
     )
 
 

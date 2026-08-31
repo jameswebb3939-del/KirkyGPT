@@ -35,7 +35,7 @@ def parse_args() -> argparse.Namespace:
             "Evaluate the trained model "
             "against the deterministic "
             "held-out portion of the "
-            "canonical v3 dataset."
+            "canonical SFT dataset."
         )
     )
 
@@ -88,7 +88,7 @@ def parse_args() -> argparse.Namespace:
             "asterisk",
             "either",
         ],
-        default="either",
+        default="dash",
     )
 
     return parser.parse_args()

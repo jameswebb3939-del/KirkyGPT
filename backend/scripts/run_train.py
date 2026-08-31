@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import torch
+
 import argparse
 import tempfile
 from pathlib import Path
@@ -15,6 +17,7 @@ from llm_followups.tuning.dataset import (
 )
 from llm_followups.tuning.train import (
     TrainConfig,
+    resolve_device,
     train,
 )
 
@@ -68,7 +71,7 @@ def parse_args() -> argparse.Namespace:
             "cuda",
             "auto",
         ],
-        default="cuda",
+        default="auto",
     )
 
     return parser.parse_args()
@@ -170,6 +173,20 @@ def main() -> int:
             assistant_only_loss=True,
         )
 
+        resolved_device = resolve_device(
+            args.device
+        )
+
+        use_bf16 = (
+            resolved_device == "cuda"
+            and torch.cuda.is_bf16_supported()
+        )
+
+        use_fp16 = (
+            resolved_device == "cuda"
+            and not use_bf16
+        )
+
         cfg = TrainConfig(
             model_name=(
                 "meta-llama/"
@@ -184,11 +201,9 @@ def main() -> int:
             save_steps=500,
             logging_steps=10,
             seed=args.seed,
-            device=args.device,
-            fp16=False,
-            bf16=(
-                args.device == "cuda"
-            ),
+            device=resolved_device,
+            fp16=use_fp16,
+            bf16=use_bf16,
         )
 
         trained_path = train(cfg)

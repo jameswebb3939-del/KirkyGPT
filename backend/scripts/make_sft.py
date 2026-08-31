@@ -671,9 +671,6 @@ def make_example(
     if response is None:
         return None
 
-    for line in response.split("\n"):
-        question_counts[line] += 1
-
     return {
         "messages": [
             {"role": "user", "content": prompt},
@@ -800,6 +797,9 @@ def generate_dataset(
         if response in seen_response_blocks:
             continue
 
+        for line in response.split("\n"):
+            question_counts[line] += 1
+
         seen_response_blocks.add(response)
         examples.append(example)
 
@@ -886,6 +886,14 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
 
+    if args.out.exists():
+        raise SystemExit(
+            "Refusing to overwrite existing dataset: "
+            f"{args.out}\n"
+            "Choose a different --out path if you "
+            "want to generate another dataset."
+        )
+
     if args.n < 1:
         raise SystemExit(
             "--n must be at least 1"
@@ -927,14 +935,6 @@ def main() -> int:
             "Generated dataset has "
             f"{stats['strict_format_failures']} "
             "strict format failures."
-        )
-
-    if args.out.exists():
-        raise SystemExit(
-            "Refusing to overwrite existing dataset: "
-            f"{args.out}\n"
-            "Choose a different --out path if you "
-            "want to generate another dataset."
         )
 
     # Only ONE canonical dataset is
