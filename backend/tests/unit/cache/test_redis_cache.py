@@ -8,11 +8,11 @@ from datetime import (
 import pytest
 from redis.exceptions import RedisError
 
-from src.llm_followups.cache.redis import (
+from llm_followups.cache.redis import (
     RedisConversationCache,
 )
 
-from src.llm_followups.persistence.models import (
+from llm_followups.persistence.models import (
     ConversationModel,
     MessageModel,
 )

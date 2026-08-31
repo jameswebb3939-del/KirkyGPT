@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from src.llm_followups.prompting import build_system_prompt, canonical_chat_messages
+from llm_followups.prompting import build_system_prompt, canonical_chat_messages
 
 
 def test_system_prompt_is_canonical_and_specific() -> None:

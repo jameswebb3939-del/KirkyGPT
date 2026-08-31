@@ -6,11 +6,11 @@ from sqlalchemy.exc import (
     IntegrityError,
 )
 
-from src.llm_followups.persistence.models import (
+from llm_followups.persistence.models import (
     ConversationModel,
     MessageModel,
 )
-from src.llm_followups.persistence.unit_of_work import (
+from llm_followups.persistence.unit_of_work import (
     UnitOfWork,
 )
 

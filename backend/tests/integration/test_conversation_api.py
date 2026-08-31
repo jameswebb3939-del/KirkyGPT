@@ -5,16 +5,16 @@ from types import SimpleNamespace
 import httpx
 import pytest
 
-from src.llm_followups.persistence.unit_of_work import (
+from llm_followups.persistence.unit_of_work import (
     UnitOfWork,
 )
-from src.llm_followups.server.main import (
+from llm_followups.server.main import (
     create_app,
 )
-from src.llm_followups.services.chat_history import (
+from llm_followups.services.chat_history import (
     ChatHistoryService,
 )
-from src.llm_followups.utils.config import (
+from llm_followups.utils.config import (
     Settings,
 )
 

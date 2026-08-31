@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.pool import StaticPool
 
-from src.llm_followups.persistence.models import (
+from llm_followups.persistence.models import (
     Base,
 )
 

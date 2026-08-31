@@ -6,16 +6,16 @@ from typing import Any
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
-from src.llm_followups.server.main import (
+from llm_followups.server.main import (
     create_app,
 )
-from src.llm_followups.server.schemas import (
+from llm_followups.server.schemas import (
     ChatRequest,
 )
-from src.llm_followups.tuning.validate import (
+from llm_followups.tuning.validate import (
     validate_followup_list,
 )
-from src.llm_followups.utils.config import (
+from llm_followups.utils.config import (
     Settings,
 )
 
