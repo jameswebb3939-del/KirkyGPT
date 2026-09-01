@@ -7,7 +7,7 @@ from typing import Any
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
 
-from ..server.llm_runtime import (
+from ..server.runtime_types import (
     GenerationResult,
 )
 

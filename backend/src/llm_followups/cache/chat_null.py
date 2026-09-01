@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ..server.llm_runtime import (
+from ..server.runtime_types import (
     GenerationResult,
 )
 

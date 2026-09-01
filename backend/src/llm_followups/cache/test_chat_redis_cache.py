@@ -8,7 +8,7 @@ from redis.exceptions import (
 from llm_followups.cache.chat_redis import (
     RedisChatGenerationCache,
 )
-from llm_followups.server.llm_runtime import (
+from llm_followups.server.runtime_types import (
     GenerationResult,
 )
 

@@ -1,0 +1,7 @@
+fastapi==0.135.1
+uvicorn==0.42.0
+httpx==0.28.1
+pydantic==2.12.5
+SQLAlchemy==2.0.52
+aiosqlite==0.22.1
+redis==8.1.0

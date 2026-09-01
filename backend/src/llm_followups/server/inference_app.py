@@ -26,6 +26,7 @@ from llm_followups.observability.metrics import (
 from llm_followups.server.schemas import (
     ChatRequest,
     ChatResponse,
+    HealthResponse,
 )
 
 from llm_followups.utils.config import (
@@ -161,10 +162,11 @@ def create_inference_app(
         )
 
     @app.get(
-        "/health"
+        "/health",
+        response_model=HealthResponse,
     )
     async def health(
-    ) -> dict[str, Any]:
+    ) -> HealthResponse:
         """
         Liveness endpoint.
 
@@ -177,6 +179,9 @@ def create_inference_app(
         )
 
         loaded = False
+        model_name = "native-unloaded"
+        device = "unknown"
+        adapter_loaded = False
 
         if current is not None:
             try:
@@ -184,14 +189,53 @@ def create_inference_app(
                     current
                     .is_loaded()
                 )
-
             except Exception:
                 loaded = False
 
-        return {
-            "status": "ok",
-            "model_loaded": loaded,
-        }
+            try:
+                model_name = str(
+                    current
+                    .model_name()
+                )
+            except Exception:
+                model_name = (
+                    "native-unavailable"
+                )
+
+            try:
+                resolved_device = str(
+                    current
+                    .device_str()
+                )
+
+                if resolved_device in (
+                    "cpu",
+                    "cuda",
+                    "unknown",
+                ):
+                    device = (
+                        resolved_device
+                    )
+            except Exception:
+                device = "unknown"
+
+            try:
+                adapter_loaded = bool(
+                    current
+                    .adapter_loaded()
+                )
+            except Exception:
+                adapter_loaded = False
+
+        return HealthResponse(
+            status="ok",
+            model_loaded=loaded,
+            model_name=model_name,
+            device=device,
+            adapter_loaded=(
+                adapter_loaded
+            ),
+        )
 
     @app.get(
         "/ready"
@@ -279,6 +323,9 @@ def create_inference_app(
                     top_p=(
                         req.top_p
                     ),
+                    seed=(
+                        req.seed
+                    ),
                 )
             )
 
@@ -327,7 +374,19 @@ def create_inference_app(
         return ChatResponse(
             response_text=(
                 result.final_text
-            )
+            ),
+            raw_text=(
+                result.raw_text
+            ),
+            used_fallback=(
+                result.used_fallback
+            ),
+            used_repair=(
+                result.used_repair
+            ),
+            latency_ms=(
+                result.latency_ms
+            ),
         )
 
     return app

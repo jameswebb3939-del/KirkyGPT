@@ -7,10 +7,12 @@ from collections.abc import Sequence
 from ..cache.chat_protocol import (
     ChatGenerationCache,
 )
-from ..server.llm_runtime import (
+from ..server.runtime_protocol import (
+    RuntimeProtocol,
+)
+from ..server.runtime_types import (
     GenerationRequest,
     GenerationResult,
-    LLMRuntime,
 )
 from ..server.schemas import (
     ChatMessage,
@@ -31,7 +33,7 @@ class CachedLLMRuntime:
 
     def __init__(
         self,
-        runtime: LLMRuntime,
+        runtime: RuntimeProtocol,
         cache: ChatGenerationCache,
         settings: Settings,
     ) -> None:

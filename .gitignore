@@ -67,3 +67,5 @@ token
 # Experiment tracking
 wandb/
 mlruns/
+backend/models/
+*.gguf

@@ -30,25 +30,10 @@ WORKDIR /app
 
 
 # ==================================================
-# Production Python dependencies
-# ==================================================
-
-COPY requirements ./requirements
-
-RUN uv venv \
-    --python 3.13 \
-    .venv
-
-RUN uv pip install \
-    --python .venv/bin/python \
-    -r requirements/inference.txt
-
-
-# ==================================================
 # Native build tooling
 #
-# This environment is discarded and is NOT copied
-# into the production image.
+# Keep this before application Python source so
+# Python-only changes do not invalidate CUDA/C++.
 # ==================================================
 
 RUN uv venv \
@@ -63,18 +48,38 @@ RUN uv pip install \
 
 
 # ==================================================
-# Application/native source
+# Native source only
+#
+# Tests are intentionally omitted because the
+# production build disables native test targets.
 # ==================================================
 
-COPY src ./src
-COPY native ./native
+COPY native/CMakeLists.txt \
+    ./native/CMakeLists.txt
+
+COPY native/include \
+    ./native/include
+
+COPY native/src \
+    ./native/src
+
+COPY native/third_party/llama.cpp \
+    ./native/third_party/llama.cpp
 
 
 # ==================================================
 # Native CUDA build
+#
+# CMake writes the Python extension to:
+# /app/src/llm_followups/native/
+#
+# Save it separately before application src is
+# copied into this stage.
 # ==================================================
 
-RUN rm -rf native/build \
+RUN mkdir -p \
+        /app/src/llm_followups/native \
+        /native-artifacts \
     && PYBIND11_DIR="$( \
         .build-venv/bin/python \
         -m pybind11 \
@@ -94,7 +99,43 @@ RUN rm -rf native/build \
         -DEC_PRO_NATIVE_BUILD_TESTS=OFF \
     && .build-venv/bin/cmake \
         --build native/build \
-        --config Release
+        --config Release \
+    && cp \
+        /app/src/llm_followups/native/_ec_pro_native*.so \
+        /native-artifacts/
+
+
+# ==================================================
+# Production Python dependencies
+#
+# These deliberately come after the native build.
+# Dependency changes therefore do not recompile
+# llama.cpp/CUDA.
+# ==================================================
+
+COPY requirements ./requirements
+
+RUN uv venv \
+    --python 3.13 \
+    .venv
+
+RUN uv pip install \
+    --python .venv/bin/python \
+    -r requirements/inference.txt
+
+
+# ==================================================
+# Application Python source
+#
+# Python-only changes invalidate from here onward,
+# not the expensive native CUDA build above.
+# ==================================================
+
+COPY src ./src
+
+RUN cp \
+    /native-artifacts/_ec_pro_native*.so \
+    /app/src/llm_followups/native/
 
 
 # ==================================================
@@ -125,13 +166,13 @@ COPY --from=build \
     /root/.local/share/uv/python
 
 
-# Only the minimal production Python environment.
+# Minimal production Python environment.
 COPY --from=build \
     /app/.venv \
     /app/.venv
 
 
-# Application source plus the compiled native .so.
+# Application source plus compiled native extension.
 COPY --from=build \
     /app/src \
     /app/src

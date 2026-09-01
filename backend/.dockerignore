@@ -30,3 +30,5 @@ native/build/**
 src/*.egg-info/
 src/**/*.egg-info/
 src/**/__pycache__/
+models/
+*.gguf

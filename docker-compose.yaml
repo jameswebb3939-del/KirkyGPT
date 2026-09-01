@@ -26,6 +26,63 @@ services:
       retries: 10
 
 
+  inference:
+    image: ec-pro-inference-gpu:production
+
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.gpu
+      args:
+        CUDA_ARCHITECTURES: "86"
+
+    environment:
+      PYTHONPATH: /app/src
+
+      MODEL_NAME: Qwen2.5-1.5B-Instruct-Q4_K_M
+
+      NATIVE_MODEL_PATH: /models/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf
+      NATIVE_GPU_LAYERS: "999"
+      NATIVE_N_CTX: "2048"
+      NATIVE_N_BATCH: "512"
+
+      NATIVE_MAX_BATCH_SIZE: "4"
+      NATIVE_MAX_QUEUE_SIZE: "64"
+      NATIVE_BATCH_WAIT_MS: "4"
+      NATIVE_BATCH_PARALLELISM: "1"
+
+      MAX_NEW_TOKENS: "64"
+      TEMPERATURE: "0.2"
+      TOP_P: "0.9"
+
+    volumes:
+      - ./backend/models:/models:ro
+
+    ports:
+      - "8000:8000"
+
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities:
+                - gpu
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "/app/.venv/bin/python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=2).read()"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+
+
   backend:
     build:
       context: ./backend
@@ -37,9 +94,8 @@ services:
       SERVER_HOST: 0.0.0.0
       SERVER_PORT: "8000"
 
-      MODEL_NAME: ${MODEL_NAME:-meta-llama/Llama-3.2-1B-Instruct}
-      MODEL_PATH: ${MODEL_PATH:-}
-      DEVICE: ${DEVICE:-cpu}
+      INFERENCE_BASE_URL: http://inference:8000
+      REQUEST_TIMEOUT_S: ${REQUEST_TIMEOUT_S:-60.0}
 
       REDIS_ENABLED: "true"
       REDIS_URL: redis://redis:6379/0
@@ -49,19 +105,18 @@ services:
       REDIS_CHAT_CACHE_ENABLED: ${REDIS_CHAT_CACHE_ENABLED:-true}
       REDIS_CHAT_CACHE_TTL_S: ${REDIS_CHAT_CACHE_TTL_S:-600}
 
-      HF_HOME: /hf-cache
-      HF_TOKEN: ${HF_TOKEN:-}
-
     volumes:
       - ./backend/data:/app/data
       - ./backend/outputs:/app/outputs:ro
-      - hf_cache:/hf-cache
 
     ports:
       - "8001:8000"
 
     depends_on:
       redis:
+        condition: service_healthy
+
+      inference:
         condition: service_healthy
 
 
@@ -75,7 +130,3 @@ services:
 
     depends_on:
       - backend
-
-
-volumes:
-  hf_cache:

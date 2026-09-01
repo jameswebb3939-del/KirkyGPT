@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from ..server.llm_runtime import (
+from ..server.runtime_types import (
     GenerationResult,
 )
 

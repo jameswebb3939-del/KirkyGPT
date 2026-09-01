@@ -42,11 +42,23 @@ class ChatRequest(BaseModel):
         le=1.0,
     )
 
+    seed: int | None = None
+
 
 class ChatResponse(BaseModel):
     response_text: str = Field(
         ...,
         min_length=1,
+    )
+
+    raw_text: str | None = None
+
+    used_fallback: bool = False
+    used_repair: bool = False
+
+    latency_ms: int | None = Field(
+        None,
+        ge=0,
     )
 
 

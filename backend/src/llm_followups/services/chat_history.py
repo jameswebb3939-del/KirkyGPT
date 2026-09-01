@@ -11,8 +11,8 @@ from ..persistence.models import (
 from ..persistence.unit_of_work import (
     UnitOfWork,
 )
-from ..server.llm_runtime import (
-    LLMRuntime,
+from ..server.runtime_protocol import (
+    RuntimeProtocol,
 )
 from ..server.schemas import (
     ChatMessage,
@@ -41,7 +41,7 @@ UoWFactory = Callable[[], UnitOfWork]
 class ChatHistoryService:
     def __init__(
         self,
-        runtime: LLMRuntime,
+        runtime: RuntimeProtocol,
         *,
         uow_factory: UoWFactory = UnitOfWork,
     ) -> None:

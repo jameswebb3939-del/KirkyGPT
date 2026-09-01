@@ -48,8 +48,11 @@ from ..persistence.models import (
     ConversationModel,
 )
 
-from .llm_runtime import (
-    LLMRuntime,
+from .remote_inference_runtime import (
+    RemoteInferenceRuntime,
+)
+from .runtime_protocol import (
+    RuntimeProtocol,
 )
 from .schemas import (
     ChatRequest,
@@ -154,7 +157,7 @@ def conversation_detail(
 def create_app(
     settings: Settings | None = None,
     *,
-    runtime: LLMRuntime | None = None,
+    runtime: RuntimeProtocol | None = None,
     chat_history: (
         ChatHistoryService
         | CachedChatHistoryService
@@ -183,8 +186,8 @@ def create_app(
     - Redis also caches identical LLM
       generation requests.
 
-    - LLMRuntime remains responsible for
-      actual model generation.
+    - The configured runtime remains
+      responsible for model generation.
 
     Tests may inject:
 
@@ -207,9 +210,25 @@ def create_app(
     )
 
     if runtime is None:
-        base_runtime = LLMRuntime(
-            settings
-        )
+        if settings.inference_base_url:
+            base_runtime = (
+                RemoteInferenceRuntime(
+                    settings
+                )
+            )
+        else:
+            # Preserve the local
+            # Transformers runtime for
+            # development/evaluation when
+            # no remote inference service
+            # is configured.
+            from .llm_runtime import (
+                LLMRuntime,
+            )
+
+            base_runtime = LLMRuntime(
+                settings
+            )
     else:
         base_runtime = runtime
 
@@ -659,7 +678,19 @@ def create_app(
         return ChatResponse(
             response_text=(
                 result.final_text
-            )
+            ),
+            raw_text=(
+                result.raw_text
+            ),
+            used_fallback=(
+                result.used_fallback
+            ),
+            used_repair=(
+                result.used_repair
+            ),
+            latency_ms=(
+                result.latency_ms
+            ),
         )
 
     # ==================================

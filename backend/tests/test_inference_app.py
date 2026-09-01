@@ -19,7 +19,15 @@ from llm_followups.utils.config import (
 
 @dataclass
 class DummyResult:
-    final_text: str
+    def __init__(
+        self,
+        final_text: str,
+    ) -> None:
+        self.raw_text = final_text
+        self.final_text = final_text
+        self.used_fallback = False
+        self.used_repair = False
+        self.latency_ms = 1
 
 
 class DummyRuntime:
@@ -55,6 +63,7 @@ class DummyRuntime:
         max_new_tokens=None,
         temperature=None,
         top_p=None,
+        seed=None,
     ):
         return {
             "messages": messages,
@@ -65,6 +74,7 @@ class DummyRuntime:
                 temperature
             ),
             "top_p": top_p,
+            "seed": seed,
         }
 
     async def generate(
