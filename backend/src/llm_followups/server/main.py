@@ -210,18 +210,24 @@ def create_app(
     )
 
     if runtime is None:
-        if settings.inference_base_url:
+        from ..rules.runtime import (
+            RuleRuntime,
+            rules_only_enabled,
+        )
+
+        if rules_only_enabled():
+            base_runtime = RuleRuntime(
+                settings
+            )
+
+        elif settings.inference_base_url:
             base_runtime = (
                 RemoteInferenceRuntime(
                     settings
                 )
             )
+
         else:
-            # Preserve the local
-            # Transformers runtime for
-            # development/evaluation when
-            # no remote inference service
-            # is configured.
             from .llm_runtime import (
                 LLMRuntime,
             )
@@ -229,6 +235,7 @@ def create_app(
             base_runtime = LLMRuntime(
                 settings
             )
+
     else:
         base_runtime = runtime
 
