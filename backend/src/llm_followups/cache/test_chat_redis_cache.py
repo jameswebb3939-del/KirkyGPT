@@ -98,7 +98,7 @@ async def test_generation_round_trip():
     cache = RedisChatGenerationCache(
         url="redis://unused",
         ttl_s=600,
-        key_prefix="ec_pro",
+        key_prefix="kirk_gpt",
         client=redis,
     )
 
@@ -150,7 +150,7 @@ async def test_generation_ttl():
     cache = RedisChatGenerationCache(
         url="redis://unused",
         ttl_s=600,
-        key_prefix="ec_pro",
+        key_prefix="kirk_gpt",
         client=redis,
     )
 
@@ -173,7 +173,7 @@ async def test_corrupt_generation_is_miss():
     cache = RedisChatGenerationCache(
         url="redis://unused",
         ttl_s=600,
-        key_prefix="ec_pro",
+        key_prefix="kirk_gpt",
         client=redis,
     )
 
@@ -203,7 +203,7 @@ async def test_chat_cache_fails_open():
     cache = RedisChatGenerationCache(
         url="redis://unused",
         ttl_s=600,
-        key_prefix="ec_pro",
+        key_prefix="kirk_gpt",
         client=redis,
     )
 

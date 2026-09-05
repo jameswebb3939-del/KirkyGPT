@@ -3,11 +3,11 @@ apiVersion: apps/v1
 kind: Deployment
 
 metadata:
-  name: ec-pro-inference
-  namespace: ec-pro
+  name: kirk-gpt-inference
+  namespace: kirk-gpt
 
   labels:
-    app: ec-pro-inference
+    app: kirk-gpt-inference
 
 
 spec:
@@ -15,7 +15,7 @@ spec:
 
   selector:
     matchLabels:
-      app: ec-pro-inference
+      app: kirk-gpt-inference
 
   strategy:
     type: RollingUpdate
@@ -28,7 +28,7 @@ spec:
   template:
     metadata:
       labels:
-        app: ec-pro-inference
+        app: kirk-gpt-inference
 
     spec:
       terminationGracePeriodSeconds: 90
@@ -37,7 +37,7 @@ spec:
         - name: inference
 
           image:
-            ghcr.io/YOUR_GITHUB_USERNAME/ec-pro-inference-gpu:latest
+            ghcr.io/YOUR_GITHUB_USERNAME/kirk-gpt-inference-gpu:latest
 
           imagePullPolicy:
             IfNotPresent
@@ -136,4 +136,4 @@ spec:
 
           persistentVolumeClaim:
             claimName:
-              ec-pro-models
+              kirk-gpt-models

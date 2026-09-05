@@ -2,17 +2,17 @@ apiVersion: apps/v1
 kind: Deployment
 
 metadata:
-  name: ec-pro-inference-stub
-  namespace: ec-pro
+  name: kirk-gpt-inference-stub
+  namespace: kirk-gpt
   labels:
-    app: ec-pro-inference-stub
+    app: kirk-gpt-inference-stub
 
 spec:
   replicas: 1
 
   selector:
     matchLabels:
-      app: ec-pro-inference-stub
+      app: kirk-gpt-inference-stub
 
   strategy:
     type: RollingUpdate
@@ -23,7 +23,7 @@ spec:
   template:
     metadata:
       labels:
-        app: ec-pro-inference-stub
+        app: kirk-gpt-inference-stub
 
     spec:
       terminationGracePeriodSeconds: 10
@@ -212,31 +212,31 @@ spec:
 
                           metrics = (
                               "# HELP "
-                              "ec_pro_native_queue_depth "
+                              "kirk_gpt_native_queue_depth "
                               "Number of inference requests "
                               "waiting for a worker.\n"
                               "# TYPE "
-                              "ec_pro_native_queue_depth "
+                              "kirk_gpt_native_queue_depth "
                               "gauge\n"
-                              f"ec_pro_native_queue_depth "
+                              f"kirk_gpt_native_queue_depth "
                               f"{queue_depth}\n"
                               "# HELP "
-                              "ec_pro_stub_active_requests "
+                              "kirk_gpt_stub_active_requests "
                               "Number of inference requests "
                               "currently executing.\n"
                               "# TYPE "
-                              "ec_pro_stub_active_requests "
+                              "kirk_gpt_stub_active_requests "
                               "gauge\n"
-                              f"ec_pro_stub_active_requests "
+                              f"kirk_gpt_stub_active_requests "
                               f"{active}\n"
                               "# HELP "
-                              "ec_pro_stub_completed_requests_total "
+                              "kirk_gpt_stub_completed_requests_total "
                               "Number of completed inference "
                               "requests.\n"
                               "# TYPE "
-                              "ec_pro_stub_completed_requests_total "
+                              "kirk_gpt_stub_completed_requests_total "
                               "counter\n"
-                              "ec_pro_stub_completed_requests_total "
+                              "kirk_gpt_stub_completed_requests_total "
                               f"{completed}\n"
                           )
 
@@ -404,7 +404,7 @@ spec:
 
               print(
                   (
-                      "EC Pro inference stub "
+                      "KirkGPT inference stub "
                       f"starting on {HOST}:{PORT} "
                       f"pod={POD_NAME} "
                       f"workers={MAX_CONCURRENT} "

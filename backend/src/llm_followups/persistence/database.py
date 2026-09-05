@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import (
 from llm_followups.persistence.models import Base
 
 
-DEFAULT_DB_PATH = Path("data") / "ec_pro.db"
+DEFAULT_DB_PATH = Path("data") / "kirk_gpt.db"
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",

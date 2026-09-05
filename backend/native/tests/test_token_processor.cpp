@@ -2,11 +2,11 @@
 #include <stdexcept>
 #include <string>
 
-#include "ec_pro_native/token_processor.hpp"
+#include "kirk_gpt_native/token_processor.hpp"
 
 namespace {
 
-using namespace ec_pro_native;
+using namespace kirk_gpt_native;
 
 void require(
     bool condition,

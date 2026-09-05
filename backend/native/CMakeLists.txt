@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 
 project(
-    ec_pro_native
+    kirk_gpt_native
     VERSION 0.1.0
     LANGUAGES C CXX
 )
@@ -84,7 +84,7 @@ find_package(
 )
 
 pybind11_add_module(
-    _ec_pro_native
+    _kirk_gpt_native
 
     src/bindings.cpp
     src/token_processor.cpp
@@ -93,27 +93,27 @@ pybind11_add_module(
 )
 
 target_include_directories(
-    _ec_pro_native
+    _kirk_gpt_native
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
 target_link_libraries(
-    _ec_pro_native
+    _kirk_gpt_native
     PRIVATE
         llama
 )
 
 if(MSVC)
     target_compile_options(
-        _ec_pro_native
+        _kirk_gpt_native
         PRIVATE
             /W4
             /EHsc
     )
 else()
     target_compile_options(
-        _ec_pro_native
+        _kirk_gpt_native
         PRIVATE
             -Wall
             -Wextra
@@ -122,27 +122,27 @@ else()
 endif()
 
 set(
-    EC_PRO_NATIVE_OUTPUT
+    KIRK_GPT_NATIVE_OUTPUT
     "${CMAKE_CURRENT_SOURCE_DIR}/../src/llm_followups/native"
 )
 
 set_target_properties(
-    _ec_pro_native
+    _kirk_gpt_native
     PROPERTIES
         LIBRARY_OUTPUT_DIRECTORY
-            "${EC_PRO_NATIVE_OUTPUT}"
+            "${KIRK_GPT_NATIVE_OUTPUT}"
 
         RUNTIME_OUTPUT_DIRECTORY
-            "${EC_PRO_NATIVE_OUTPUT}"
+            "${KIRK_GPT_NATIVE_OUTPUT}"
 )
 
 option(
-    EC_PRO_NATIVE_BUILD_TESTS
-    "Build EC Pro native tests"
+    KIRK_GPT_NATIVE_BUILD_TESTS
+    "Build KirkGPT native tests"
     ON
 )
 
-if(EC_PRO_NATIVE_BUILD_TESTS)
+if(KIRK_GPT_NATIVE_BUILD_TESTS)
     enable_testing()
 
     find_package(
@@ -155,34 +155,34 @@ if(EC_PRO_NATIVE_BUILD_TESTS)
     #
 
     add_executable(
-        ec_pro_native_scheduler_tests
+        kirk_gpt_native_scheduler_tests
 
         tests/test_batch_scheduler.cpp
         src/batch_scheduler.cpp
     )
 
     target_include_directories(
-        ec_pro_native_scheduler_tests
+        kirk_gpt_native_scheduler_tests
         PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/include
     )
 
     target_link_libraries(
-        ec_pro_native_scheduler_tests
+        kirk_gpt_native_scheduler_tests
         PRIVATE
             Threads::Threads
     )
 
     if(MSVC)
         target_compile_options(
-            ec_pro_native_scheduler_tests
+            kirk_gpt_native_scheduler_tests
             PRIVATE
                 /W4
                 /EHsc
         )
     else()
         target_compile_options(
-            ec_pro_native_scheduler_tests
+            kirk_gpt_native_scheduler_tests
             PRIVATE
                 -Wall
                 -Wextra
@@ -192,9 +192,9 @@ if(EC_PRO_NATIVE_BUILD_TESTS)
 
     add_test(
         NAME
-            ec_pro_native_scheduler_tests
+            kirk_gpt_native_scheduler_tests
         COMMAND
-            ec_pro_native_scheduler_tests
+            kirk_gpt_native_scheduler_tests
     )
 
     #
@@ -202,20 +202,20 @@ if(EC_PRO_NATIVE_BUILD_TESTS)
     #
 
     add_executable(
-        ec_pro_native_token_processor_tests
+        kirk_gpt_native_token_processor_tests
 
         tests/test_token_processor.cpp
         src/token_processor.cpp
     )
 
     target_include_directories(
-        ec_pro_native_token_processor_tests
+        kirk_gpt_native_token_processor_tests
         PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/include
     )
 
     target_link_libraries(
-        ec_pro_native_token_processor_tests
+        kirk_gpt_native_token_processor_tests
         PRIVATE
             llama
             Threads::Threads
@@ -223,14 +223,14 @@ if(EC_PRO_NATIVE_BUILD_TESTS)
 
     if(MSVC)
         target_compile_options(
-            ec_pro_native_token_processor_tests
+            kirk_gpt_native_token_processor_tests
             PRIVATE
                 /W4
                 /EHsc
         )
     else()
         target_compile_options(
-            ec_pro_native_token_processor_tests
+            kirk_gpt_native_token_processor_tests
             PRIVATE
                 -Wall
                 -Wextra
@@ -240,8 +240,8 @@ if(EC_PRO_NATIVE_BUILD_TESTS)
 
     add_test(
         NAME
-            ec_pro_native_token_processor_tests
+            kirk_gpt_native_token_processor_tests
         COMMAND
-            ec_pro_native_token_processor_tests
+            kirk_gpt_native_token_processor_tests
     )
 endif()

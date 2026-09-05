@@ -147,7 +147,7 @@ def main() -> int:
     # data/ continues to contain ONE
     # canonical JSONL dataset.
     with tempfile.TemporaryDirectory(
-        prefix="ec_pro_train_"
+        prefix="kirk_gpt_train_"
     ) as temp_dir:
         temporary_train_path = (
             Path(temp_dir)

@@ -7,11 +7,11 @@ from locust import (
 )
 
 
-class ECProUser(
+class KirkGPTUser(
     HttpUser
 ):
     """
-    Simulated EC Pro inference user.
+    Simulated KirkGPT inference user.
     """
 
     wait_time = between(
@@ -29,7 +29,7 @@ class ECProUser(
                     "role": "user",
                     "content": (
                         "Explain how "
-                        "EC Pro should "
+                        "KirkGPT should "
                         "scale under "
                         "production load."
                     ),

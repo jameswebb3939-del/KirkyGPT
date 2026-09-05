@@ -132,7 +132,7 @@ async def run(
 
     # Evaluation split is temporary.
     with tempfile.TemporaryDirectory(
-        prefix="ec_pro_eval_"
+        prefix="kirk_gpt_eval_"
     ) as temp_dir:
         eval_path = (
             Path(temp_dir)

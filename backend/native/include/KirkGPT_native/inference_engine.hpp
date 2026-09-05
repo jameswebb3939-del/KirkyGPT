@@ -7,11 +7,11 @@
 
 #include "llama.h"
 
-#include "ec_pro_native/generation_backend.hpp"
-#include "ec_pro_native/token_processor.hpp"
-#include "ec_pro_native/types.hpp"
+#include "kirk_gpt_native/generation_backend.hpp"
+#include "kirk_gpt_native/token_processor.hpp"
+#include "kirk_gpt_native/types.hpp"
 
-namespace ec_pro_native {
+namespace kirk_gpt_native {
 
 class InferenceEngine final
     : public GenerationBackend {
@@ -70,4 +70,4 @@ private:
         token_processor_;
 };
 
-}  // namespace ec_pro_native
+}  // namespace kirk_gpt_native

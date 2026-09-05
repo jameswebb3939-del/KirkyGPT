@@ -71,7 +71,7 @@ def create_inference_app(
     runtime: Any | None = None,
 ) -> FastAPI:
     """
-    Build the stateless EC Pro
+    Build the stateless KirkGPT
     inference service.
 
     This service is intended to be
@@ -129,14 +129,14 @@ def create_inference_app(
 
     app = FastAPI(
         title=(
-            "EC Pro "
+            "KirkGPT "
             "Inference Service"
         ),
         version="1.0.0",
         description=(
             "Horizontally scalable "
             "native/GPU inference tier "
-            "for EC Pro."
+            "for KirkGPT."
         ),
         lifespan=lifespan,
     )

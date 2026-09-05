@@ -9,10 +9,10 @@
 #include <mutex>
 #include <thread>
 
-#include "ec_pro_native/generation_backend.hpp"
-#include "ec_pro_native/types.hpp"
+#include "kirk_gpt_native/generation_backend.hpp"
+#include "kirk_gpt_native/types.hpp"
 
-namespace ec_pro_native {
+namespace kirk_gpt_native {
 
 class BatchScheduler {
 public:
@@ -82,4 +82,4 @@ private:
     std::thread worker_;
 };
 
-}  // namespace ec_pro_native
+}  // namespace kirk_gpt_native

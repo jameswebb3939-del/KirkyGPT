@@ -2,12 +2,12 @@ apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
 
 metadata:
-  name: ec-pro-inference-stub
-  namespace: ec-pro
+  name: kirk-gpt-inference-stub
+  namespace: kirk-gpt
 
 spec:
   scaleTargetRef:
-    name: ec-pro-inference-stub
+    name: kirk-gpt-inference-stub
 
   minReplicaCount: 1
   maxReplicaCount: 5
@@ -45,7 +45,7 @@ spec:
           http://monitoring-kube-prometheus-prometheus.monitoring.svc.cluster.local:9090
 
         query: >-
-          sum(ec_pro_native_queue_depth)
+          sum(kirk_gpt_native_queue_depth)
 
         threshold: "3"
 

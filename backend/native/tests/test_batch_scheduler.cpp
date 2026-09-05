@@ -13,13 +13,13 @@
 #include <utility>
 #include <vector>
 
-#include "ec_pro_native/batch_scheduler.hpp"
-#include "ec_pro_native/generation_backend.hpp"
-#include "ec_pro_native/types.hpp"
+#include "kirk_gpt_native/batch_scheduler.hpp"
+#include "kirk_gpt_native/generation_backend.hpp"
+#include "kirk_gpt_native/types.hpp"
 
 namespace {
 
-using namespace ec_pro_native;
+using namespace kirk_gpt_native;
 
 void require(
     bool condition,

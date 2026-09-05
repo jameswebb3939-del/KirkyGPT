@@ -211,13 +211,13 @@ def test_metrics_expose_queue_depth(
         )
 
         assert (
-            "ec_pro_native_queue_depth "
+            "kirk_gpt_native_queue_depth "
             "3.0"
             in response.text
         )
 
         assert (
-            "ec_pro_runtime_loaded "
+            "kirk_gpt_runtime_loaded "
             "1.0"
             in response.text
         )

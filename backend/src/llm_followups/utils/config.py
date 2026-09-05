@@ -34,7 +34,7 @@ class Settings:
         "redis://127.0.0.1:6379/0"
     )
     redis_cache_ttl_s: int = 300
-    redis_key_prefix: str = "ec_pro"
+    redis_key_prefix: str = "kirk_gpt"
 
     redis_chat_cache_enabled: bool = True
     redis_chat_cache_ttl_s: int = 600
@@ -106,7 +106,7 @@ def get_settings(env: Optional[dict[str, str]] = None) -> Settings:
 
     redis_key_prefix = get_env_var(
         "REDIS_KEY_PREFIX",
-        "ec_pro",
+        "kirk_gpt",
     )
 
     redis_chat_cache_enabled = (

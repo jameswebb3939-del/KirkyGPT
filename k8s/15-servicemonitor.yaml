@@ -3,17 +3,17 @@ apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 
 metadata:
-  name: ec-pro-inference
-  namespace: ec-pro
+  name: kirk-gpt-inference
+  namespace: kirk-gpt
 
   labels:
-    app: ec-pro-inference
+    app: kirk-gpt-inference
 
 
 spec:
   selector:
     matchLabels:
-      app: ec-pro-inference
+      app: kirk-gpt-inference
 
   endpoints:
     - port: http

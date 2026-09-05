@@ -24,10 +24,10 @@ from prometheus_client import (
 
 
 HTTP_REQUESTS = Counter(
-    "ec_pro_http_requests_total",
+    "kirk_gpt_http_requests_total",
     (
         "Total HTTP requests "
-        "handled by EC Pro."
+        "handled by KirkGPT."
     ),
     (
         "method",
@@ -38,7 +38,7 @@ HTTP_REQUESTS = Counter(
 
 
 HTTP_REQUEST_DURATION = Histogram(
-    "ec_pro_http_request_duration_seconds",
+    "kirk_gpt_http_request_duration_seconds",
     (
         "HTTP request latency "
         "in seconds."
@@ -65,7 +65,7 @@ HTTP_REQUEST_DURATION = Histogram(
 
 
 HTTP_IN_FLIGHT = Gauge(
-    "ec_pro_http_requests_in_flight",
+    "kirk_gpt_http_requests_in_flight",
     (
         "Current number of "
         "in-flight HTTP requests."
@@ -74,10 +74,10 @@ HTTP_IN_FLIGHT = Gauge(
 
 
 INFERENCE_REQUESTS = Counter(
-    "ec_pro_inference_requests_total",
+    "kirk_gpt_inference_requests_total",
     (
         "Total inference requests "
-        "handled by EC Pro."
+        "handled by KirkGPT."
     ),
     (
         "outcome",
@@ -86,7 +86,7 @@ INFERENCE_REQUESTS = Counter(
 
 
 INFERENCE_DURATION = Histogram(
-    "ec_pro_inference_duration_seconds",
+    "kirk_gpt_inference_duration_seconds",
     (
         "End-to-end inference "
         "latency in seconds."
@@ -107,7 +107,7 @@ INFERENCE_DURATION = Histogram(
 
 
 NATIVE_QUEUE_DEPTH = Gauge(
-    "ec_pro_native_queue_depth",
+    "kirk_gpt_native_queue_depth",
     (
         "Current number of requests "
         "waiting in the native "
@@ -117,7 +117,7 @@ NATIVE_QUEUE_DEPTH = Gauge(
 
 
 RUNTIME_LOADED = Gauge(
-    "ec_pro_runtime_loaded",
+    "kirk_gpt_runtime_loaded",
     (
         "1 when the inference runtime "
         "is loaded, otherwise 0."

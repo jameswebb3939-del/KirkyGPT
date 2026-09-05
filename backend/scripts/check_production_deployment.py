@@ -109,7 +109,7 @@ def main() -> int:
     warnings: list[str] = []
 
     print(
-        "EC Pro production deployment preflight"
+        "KirkGPT production deployment preflight"
     )
     print(
         "=" * 40

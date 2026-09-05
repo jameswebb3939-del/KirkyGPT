@@ -58,7 +58,7 @@ export default function ChatInput({
           setValue(event.target.value)
         }
         onKeyDown={handleKeyDown}
-        placeholder="Message EC Pro..."
+        placeholder="Message KirkGPT..."
         rows={1}
         disabled={disabled}
       />

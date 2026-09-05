@@ -17,12 +17,12 @@ export default function Header({
         </button>
 
         <div className="app-logo">
-          EC
+          Kirk
         </div>
       </div>
 
       <h1 className="app-title">
-        EC Pro
+        KirkGPT
       </h1>
     </header>
   );

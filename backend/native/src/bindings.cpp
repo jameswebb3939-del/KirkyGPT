@@ -6,20 +6,20 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
-#include "ec_pro_native/batch_scheduler.hpp"
-#include "ec_pro_native/inference_engine.hpp"
-#include "ec_pro_native/types.hpp"
+#include "kirk_gpt_native/batch_scheduler.hpp"
+#include "kirk_gpt_native/inference_engine.hpp"
+#include "kirk_gpt_native/types.hpp"
 
 namespace py = pybind11;
 
-using namespace ec_pro_native;
+using namespace kirk_gpt_native;
 
 PYBIND11_MODULE(
-    _ec_pro_native,
+    _kirk_gpt_native,
     module
 ) {
     module.doc() =
-        "EC Pro native inference, batching "
+        "KirkGPT native inference, batching "
         "and token-processing layer";
 
     module.def(

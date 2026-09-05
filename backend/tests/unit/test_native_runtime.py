@@ -10,7 +10,7 @@ from llm_followups.utils.config import get_settings
 
 pytestmark = pytest.mark.skipif(
     not native_available(),
-    reason="EC Pro native extension is not built",
+    reason="KirkGPT native extension is not built",
 )
 
 

@@ -3,8 +3,8 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 
 metadata:
-  name: ec-pro-models
-  namespace: ec-pro
+  name: kirk-gpt-models
+  namespace: kirk-gpt
 
 spec:
   accessModes:

@@ -1,4 +1,4 @@
-#include "ec_pro_native/inference_engine.hpp"
+#include "kirk_gpt_native/inference_engine.hpp"
 
 #include <algorithm>
 #include <atomic>
@@ -10,7 +10,7 @@
 
 #include "ggml-backend.h"
 
-namespace ec_pro_native {
+namespace kirk_gpt_native {
 
 namespace {
 
@@ -558,4 +558,4 @@ InferenceEngine::tokenize_many(
         );
 }
 
-}  // namespace ec_pro_native
+}  // namespace kirk_gpt_native

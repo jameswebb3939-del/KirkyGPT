@@ -3,14 +3,14 @@ apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
 
 metadata:
-  name: ec-pro-inference
-  namespace: ec-pro
+  name: kirk-gpt-inference
+  namespace: kirk-gpt
 
 
 spec:
   scaleTargetRef:
     name:
-      ec-pro-inference
+      kirk-gpt-inference
 
   pollingInterval: 15
 
@@ -59,8 +59,8 @@ spec:
 
         query: |
           sum(
-            ec_pro_native_queue_depth{
-              namespace="ec-pro"
+            kirk_gpt_native_queue_depth{
+              namespace="kirk-gpt"
             }
           )
 

@@ -6,7 +6,7 @@
 
 #include "llama.h"
 
-namespace ec_pro_native {
+namespace kirk_gpt_native {
 
 class TokenProcessor {
 public:
@@ -39,4 +39,4 @@ private:
     const llama_vocab* vocab_;
 };
 
-}  // namespace ec_pro_native
+}  // namespace kirk_gpt_native

@@ -3,7 +3,7 @@ kind: Job
 
 metadata:
   name: autoscale-load
-  namespace: ec-pro
+  namespace: kirk-gpt
 
 spec:
   backoffLimit: 0
@@ -37,8 +37,8 @@ spec:
 
 
               URL = (
-                  "http://ec-pro-inference"
-                  ".ec-pro.svc.cluster.local"
+                  "http://kirk-gpt-inference"
+                  ".kirk-gpt.svc.cluster.local"
                   ":8000/chat"
               )
 

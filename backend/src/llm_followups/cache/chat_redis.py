@@ -30,7 +30,7 @@ class RedisChatGenerationCache:
         *,
         url: str,
         ttl_s: int = 600,
-        key_prefix: str = "ec_pro",
+        key_prefix: str = "kirk_gpt",
         client: Any | None = None,
     ) -> None:
         if ttl_s < 1:

@@ -3,9 +3,9 @@
 #include <cstddef>
 #include <vector>
 
-#include "ec_pro_native/types.hpp"
+#include "kirk_gpt_native/types.hpp"
 
-namespace ec_pro_native {
+namespace kirk_gpt_native {
 
 class GenerationBackend {
 public:
@@ -18,4 +18,4 @@ public:
     ) const = 0;
 };
 
-}  // namespace ec_pro_native
+}  // namespace kirk_gpt_native

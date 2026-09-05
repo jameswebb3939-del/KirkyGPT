@@ -3,8 +3,8 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 
 metadata:
-  name: ec-pro-inference
-  namespace: ec-pro
+  name: kirk-gpt-inference
+  namespace: kirk-gpt
 
 
 spec:
@@ -12,7 +12,7 @@ spec:
 
   rules:
     - host:
-        ec-pro.example.com
+        kirk-gpt.example.com
 
       http:
         paths:
@@ -22,7 +22,7 @@ spec:
             backend:
               service:
                 name:
-                  ec-pro-inference
+                  kirk-gpt-inference
 
                 port:
                   number: 8000

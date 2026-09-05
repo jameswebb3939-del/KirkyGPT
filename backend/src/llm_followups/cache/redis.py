@@ -31,7 +31,7 @@ class RedisConversationCache:
         *,
         url: str,
         ttl_s: int = 300,
-        key_prefix: str = "ec_pro",
+        key_prefix: str = "kirk_gpt",
         client: Any | None = None,
     ) -> None:
         if ttl_s < 1:

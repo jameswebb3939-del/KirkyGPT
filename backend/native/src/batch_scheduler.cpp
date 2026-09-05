@@ -1,4 +1,4 @@
-#include "ec_pro_native/batch_scheduler.hpp"
+#include "kirk_gpt_native/batch_scheduler.hpp"
 
 #include <algorithm>
 #include <exception>
@@ -6,7 +6,7 @@
 #include <utility>
 #include <vector>
 
-namespace ec_pro_native {
+namespace kirk_gpt_native {
 
 BatchScheduler::BatchScheduler(
     std::shared_ptr<GenerationBackend>
@@ -284,4 +284,4 @@ void BatchScheduler::worker_loop() {
     }
 }
 
-}  // namespace ec_pro_native
+}  // namespace kirk_gpt_native

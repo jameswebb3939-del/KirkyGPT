@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-namespace ec_pro_native {
+namespace kirk_gpt_native {
 
 struct EngineConfig {
     std::string model_path;
@@ -48,4 +48,4 @@ struct GenerationResult {
     std::size_t generated_tokens = 0;
 };
 
-}  // namespace ec_pro_native
+}  // namespace kirk_gpt_native

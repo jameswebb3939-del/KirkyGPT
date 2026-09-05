@@ -37,10 +37,10 @@ export default function ChatWindow({
         {messages.length === 0 && (
           <div className="welcome-screen">
             <div className="welcome-logo">
-              EC
+              KirkGPT
             </div>
 
-            <h2>EC Pro</h2>
+            <h2>KirkGPT</h2>
 
             <p>
               Start a conversation below.

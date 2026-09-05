@@ -2,26 +2,26 @@ apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 
 metadata:
-  name: ec-pro-inference-alerts
-  namespace: ec-pro
+  name: kirk-gpt-inference-alerts
+  namespace: kirk-gpt
 
   labels:
     release: monitoring
-    app: ec-pro-inference
+    app: kirk-gpt-inference
 
 spec:
   groups:
-    - name: ec-pro-inference.availability
+    - name: kirk-gpt-inference.availability
 
       rules:
-        - alert: ECProHighErrorRateWarning
+        - alert: KirkGPTHighErrorRateWarning
 
           expr: |
             (
               sum(
                 rate(
-                  ec_pro_http_requests_total{
-                    namespace="ec-pro",
+                  kirk_gpt_http_requests_total{
+                    namespace="kirk-gpt",
                     route="/chat",
                     status_code=~"5.."
                   }[5m]
@@ -31,8 +31,8 @@ spec:
               clamp_min(
                 sum(
                   rate(
-                    ec_pro_http_requests_total{
-                      namespace="ec-pro",
+                    kirk_gpt_http_requests_total{
+                      namespace="kirk-gpt",
                       route="/chat"
                     }[5m]
                   )
@@ -45,11 +45,11 @@ spec:
 
           labels:
             severity: warning
-            service: ec-pro-inference
+            service: kirk-gpt-inference
 
           annotations:
             summary: >-
-              EC Pro inference error rate is above 1%.
+              KirkGPT inference error rate is above 1%.
 
             description: >-
               More than 1% of /chat requests have returned
@@ -59,14 +59,14 @@ spec:
               docs/production/runbook.md#high-error-rate
 
 
-        - alert: ECProHighErrorRateCritical
+        - alert: KirkGPTHighErrorRateCritical
 
           expr: |
             (
               sum(
                 rate(
-                  ec_pro_http_requests_total{
-                    namespace="ec-pro",
+                  kirk_gpt_http_requests_total{
+                    namespace="kirk-gpt",
                     route="/chat",
                     status_code=~"5.."
                   }[5m]
@@ -76,8 +76,8 @@ spec:
               clamp_min(
                 sum(
                   rate(
-                    ec_pro_http_requests_total{
-                      namespace="ec-pro",
+                    kirk_gpt_http_requests_total{
+                      namespace="kirk-gpt",
                       route="/chat"
                     }[5m]
                   )
@@ -90,11 +90,11 @@ spec:
 
           labels:
             severity: critical
-            service: ec-pro-inference
+            service: kirk-gpt-inference
 
           annotations:
             summary: >-
-              EC Pro inference error rate is above 5%.
+              KirkGPT inference error rate is above 5%.
 
             description: >-
               More than 5% of /chat requests have returned
@@ -104,18 +104,18 @@ spec:
               docs/production/runbook.md#high-error-rate
 
 
-    - name: ec-pro-inference.latency
+    - name: kirk-gpt-inference.latency
 
       rules:
-        - alert: ECProP95LatencyHighWarning
+        - alert: KirkGPTP95LatencyHighWarning
 
           expr: |
             histogram_quantile(
               0.95,
               sum by (le) (
                 rate(
-                  ec_pro_inference_duration_seconds_bucket{
-                    namespace="ec-pro"
+                  kirk_gpt_inference_duration_seconds_bucket{
+                    namespace="kirk-gpt"
                   }[5m]
                 )
               )
@@ -125,11 +125,11 @@ spec:
 
           labels:
             severity: warning
-            service: ec-pro-inference
+            service: kirk-gpt-inference
 
           annotations:
             summary: >-
-              EC Pro inference p95 latency is above 2.5 seconds.
+              KirkGPT inference p95 latency is above 2.5 seconds.
 
             description: >-
               The p95 inference duration has exceeded the
@@ -139,15 +139,15 @@ spec:
               docs/production/runbook.md#high-p95-latency
 
 
-        - alert: ECProP95LatencyHighCritical
+        - alert: KirkGPTP95LatencyHighCritical
 
           expr: |
             histogram_quantile(
               0.95,
               sum by (le) (
                 rate(
-                  ec_pro_inference_duration_seconds_bucket{
-                    namespace="ec-pro"
+                  kirk_gpt_inference_duration_seconds_bucket{
+                    namespace="kirk-gpt"
                   }[5m]
                 )
               )
@@ -157,11 +157,11 @@ spec:
 
           labels:
             severity: critical
-            service: ec-pro-inference
+            service: kirk-gpt-inference
 
           annotations:
             summary: >-
-              EC Pro inference p95 latency is above 5 seconds.
+              KirkGPT inference p95 latency is above 5 seconds.
 
             description: >-
               Severe inference latency has persisted for at
@@ -171,15 +171,15 @@ spec:
               docs/production/runbook.md#high-p95-latency
 
 
-    - name: ec-pro-inference.capacity
+    - name: kirk-gpt-inference.capacity
 
       rules:
-        - alert: ECProInferenceQueueBacklog
+        - alert: KirkGPTInferenceQueueBacklog
 
           expr: |
             sum(
-              ec_pro_native_queue_depth{
-                namespace="ec-pro"
+              kirk_gpt_native_queue_depth{
+                namespace="kirk-gpt"
               }
             ) > 16
 
@@ -187,11 +187,11 @@ spec:
 
           labels:
             severity: warning
-            service: ec-pro-inference
+            service: kirk-gpt-inference
 
           annotations:
             summary: >-
-              EC Pro inference queue backlog is elevated.
+              KirkGPT inference queue backlog is elevated.
 
             description: >-
               More than 16 inference requests have remained
@@ -201,12 +201,12 @@ spec:
               docs/production/runbook.md#queue-backlog
 
 
-        - alert: ECProInferenceQueueBacklogCritical
+        - alert: KirkGPTInferenceQueueBacklogCritical
 
           expr: |
             sum(
-              ec_pro_native_queue_depth{
-                namespace="ec-pro"
+              kirk_gpt_native_queue_depth{
+                namespace="kirk-gpt"
               }
             ) > 32
 
@@ -214,11 +214,11 @@ spec:
 
           labels:
             severity: critical
-            service: ec-pro-inference
+            service: kirk-gpt-inference
 
           annotations:
             summary: >-
-              EC Pro inference queue backlog is critical.
+              KirkGPT inference queue backlog is critical.
 
             description: >-
               More than 32 inference requests have remained
@@ -228,15 +228,15 @@ spec:
               docs/production/runbook.md#queue-backlog
 
 
-    - name: ec-pro-inference.runtime
+    - name: kirk-gpt-inference.runtime
 
       rules:
-        - alert: ECProNoLoadedRuntime
+        - alert: KirkGPTNoLoadedRuntime
 
           expr: |
             sum(
-              ec_pro_runtime_loaded{
-                namespace="ec-pro"
+              kirk_gpt_runtime_loaded{
+                namespace="kirk-gpt"
               }
             ) < 1
 
@@ -244,11 +244,11 @@ spec:
 
           labels:
             severity: critical
-            service: ec-pro-inference
+            service: kirk-gpt-inference
 
           annotations:
             summary: >-
-              No EC Pro inference runtime is loaded.
+              No KirkGPT inference runtime is loaded.
 
             description: >-
               Prometheus has observed no loaded inference
@@ -258,12 +258,12 @@ spec:
               docs/production/runbook.md#no-loaded-runtime
 
 
-        - alert: ECProInferenceMetricsMissing
+        - alert: KirkGPTInferenceMetricsMissing
 
           expr: |
             absent(
-              ec_pro_runtime_loaded{
-                namespace="ec-pro"
+              kirk_gpt_runtime_loaded{
+                namespace="kirk-gpt"
               }
             )
 
@@ -271,11 +271,11 @@ spec:
 
           labels:
             severity: warning
-            service: ec-pro-inference
+            service: kirk-gpt-inference
 
           annotations:
             summary: >-
-              EC Pro inference metrics are missing.
+              KirkGPT inference metrics are missing.
 
             description: >-
               Prometheus has not received the runtime metric

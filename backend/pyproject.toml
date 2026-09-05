@@ -4,15 +4,15 @@ build-backend = "setuptools.build_meta"
 
 
 [project]
-name = "llm-followups"
-version = "0.1.0"
-description = "Local LLM server and CLI client that generates follow-up questions."
+name = "KirkGPT"
+version = "1.0.0"
+description = "Happy Kirkiversary! Enjoy KirkGPT"
 readme = "README.md"
 requires-python = ">=3.13"
 license = { text = "MIT" }
 
 authors = [
-  { name = "Shyam Popat" }
+  { name = "James Webb" }
 ]
 
 dependencies = [

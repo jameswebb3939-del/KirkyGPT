@@ -27,7 +27,7 @@ services:
 
 
   inference:
-    image: ec-pro-inference-gpu:production
+    image: kirk-gpt-inference-gpu:production
 
     build:
       context: ./backend
@@ -100,7 +100,7 @@ services:
       REDIS_ENABLED: "true"
       REDIS_URL: redis://redis:6379/0
       REDIS_CACHE_TTL_S: ${REDIS_CACHE_TTL_S:-300}
-      REDIS_KEY_PREFIX: ${REDIS_KEY_PREFIX:-ec_pro}
+      REDIS_KEY_PREFIX: ${REDIS_KEY_PREFIX:-kirk_gpt}
 
       REDIS_CHAT_CACHE_ENABLED: ${REDIS_CHAT_CACHE_ENABLED:-true}
       REDIS_CHAT_CACHE_TTL_S: ${REDIS_CHAT_CACHE_TTL_S:-600}

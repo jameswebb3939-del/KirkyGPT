@@ -122,7 +122,7 @@ async def test_conversation_round_trip():
     cache = RedisConversationCache(
         url="redis://unused",
         ttl_s=300,
-        key_prefix="ec_pro",
+        key_prefix="KirkGPT",
         client=redis,
     )
 

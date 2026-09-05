@@ -60,7 +60,7 @@ export default function App() {
 
   /*
    * Load conversation history
-   * from SQLite when EC Pro starts.
+   * from SQLite when KirkGPT starts.
    */
   useEffect(() => {
     async function loadHistory() {

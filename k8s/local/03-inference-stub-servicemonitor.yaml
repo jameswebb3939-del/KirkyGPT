@@ -2,8 +2,8 @@ apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 
 metadata:
-  name: ec-pro-inference-stub
-  namespace: ec-pro
+  name: kirk-gpt-inference-stub
+  namespace: kirk-gpt
 
   labels:
     release: monitoring
@@ -11,11 +11,11 @@ metadata:
 spec:
   selector:
     matchLabels:
-      app: ec-pro-inference-stub
+      app: kirk-gpt-inference-stub
 
   namespaceSelector:
     matchNames:
-      - ec-pro
+      - kirk-gpt
 
   endpoints:
     - port: http

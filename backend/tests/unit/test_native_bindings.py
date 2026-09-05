@@ -10,7 +10,7 @@ from llm_followups.native import (
 
 pytestmark = pytest.mark.skipif(
     not native_available(),
-    reason="EC Pro native C++ extension is not built",
+    reason="KirkGPT native C++ extension is not built",
 )
 
 

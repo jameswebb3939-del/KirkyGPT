@@ -1,4 +1,4 @@
-#include "ec_pro_native/token_processor.hpp"
+#include "kirk_gpt_native/token_processor.hpp"
 
 #include <algorithm>
 #include <array>
@@ -11,7 +11,7 @@
 #include <thread>
 #include <vector>
 
-namespace ec_pro_native {
+namespace kirk_gpt_native {
 
 namespace {
 
@@ -432,4 +432,4 @@ TokenProcessor::tokenize_many(
     return results;
 }
 
-}  // namespace ec_pro_native
+}  // namespace kirk_gpt_native
