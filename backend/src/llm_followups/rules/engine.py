@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import re
 from collections.abc import Sequence
 
 from llm_followups.server.schemas import ChatMessage
 
 from .definitions import DEFAULT_RULES
+from .matching import contains_keyword
 from .models import (
     ConversationRule,
     RuleStep,
@@ -15,28 +15,6 @@ from .models import (
 NO_RULE_RESPONSE = (
     "I don't have a predefined rule for that topic yet."
 )
-
-
-def _normalise(text: str) -> str:
-    return " ".join(text.casefold().split())
-
-
-def _contains_keyword(text: str, keyword: str) -> bool:
-    normalised_text = _normalise(text)
-    normalised_keyword = _normalise(keyword)
-
-    if not normalised_keyword:
-        return False
-
-    if " " in normalised_keyword or "-" in normalised_keyword:
-        return normalised_keyword in normalised_text
-
-    return bool(
-        re.search(
-            rf"(?<!\w){re.escape(normalised_keyword)}(?!\w)",
-            normalised_text,
-        )
-    )
 
 
 class RuleEngine:
@@ -89,7 +67,7 @@ class RuleEngine:
             score = sum(
                 1
                 for keyword in rule.keywords
-                if _contains_keyword(text, keyword)
+                if contains_keyword(text, keyword)
             )
 
             if score > best_score:
@@ -131,7 +109,7 @@ class RuleEngine:
     ):
         for branch in step.branches:
             if any(
-                _contains_keyword(
+                contains_keyword(
                     user_answer,
                     keyword,
                 )

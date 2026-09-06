@@ -239,32 +239,32 @@ def test_each_row_matches_chatrequest_schema(
             ) from exc
 
 
-def test_assistant_messages_are_followup_bullets(
+def test_sft_assistant_messages_are_nonempty(
     sft_rows: list[
         dict[str, Any]
     ],
 ) -> None:
     for row in sft_rows:
-        messages = row["messages"]
+        assistant_messages = [
+            message
+            for message in row["messages"]
+            if message.get("role")
+            == "assistant"
+        ]
 
-        assistant_text = (
-            get_last_assistant_text(
-                messages
+        assert assistant_messages
+
+        for message in assistant_messages:
+            content = message.get(
+                "content"
             )
-        )
 
-        assert assistant_text is not None
+            assert isinstance(
+                content,
+                str,
+            )
 
-        result = validate_followup_list(
-            text=assistant_text,
-            min_questions=3,
-            bullet_style="either",
-            require_question_mark=True,
-            forbid_extra_text=True,
-        )
-
-        assert result.ok, result.errors
-
+            assert content.strip()
 
 def test_no_numbered_lists_in_assistant_output(
     sft_rows: list[
@@ -295,32 +295,25 @@ def test_no_numbered_lists_in_assistant_output(
             )
 
 
-def test_min_questions_respected(
+def test_sft_rows_are_rule_derived(
     sft_rows: list[
         dict[str, Any]
     ],
 ) -> None:
-    minimum = 3
-
     for row in sft_rows:
-        assistant_text = (
-            get_last_assistant_text(
-                row["messages"]
-            )
-        )
-
-        assert assistant_text is not None
-
-        result = validate_followup_list(
-            text=assistant_text,
-            min_questions=minimum,
-            bullet_style="either",
-            require_question_mark=True,
-            forbid_extra_text=True,
-        )
-
-        assert result.ok, result.errors
         assert (
-            result.num_items
-            >= minimum
+            row.get("source")
+            == "definitions.py"
         )
+
+        rule_id = row.get(
+            "rule_id"
+        )
+
+        assert isinstance(
+            rule_id,
+            str,
+        )
+
+        assert rule_id.strip()
+

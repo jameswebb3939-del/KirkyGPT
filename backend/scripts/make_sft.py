@@ -11,6 +11,9 @@ from llm_followups.rules.models import (
     ConversationRule,
     RuleStep,
 )
+from llm_followups.rules.matching import (
+    contains_keyword,
+)
 
 
 TRIGGER_TEMPLATES = (
@@ -76,12 +79,12 @@ def _matching_branch(
     step: RuleStep,
     user_text: str,
 ):
-    lowered = user_text.casefold()
-
     for branch in step.branches:
         if any(
-            keyword.casefold()
-            in lowered
+            contains_keyword(
+                user_text,
+                keyword,
+            )
             for keyword
             in branch.keywords
         ):

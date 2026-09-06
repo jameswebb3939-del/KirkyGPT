@@ -1,24 +1,6 @@
-SFT dataset validation report
+KirkGPT SFT dataset report
 ========================================
+Source: llm_followups.rules.definitions.DEFAULT_RULES
 Examples: 2000
-Strict format failures: 0
-Unique question lines: 2350 / 6000
-Unique assistant responses: 2000 / 2000
-Unique prompts: 599 / 2000
-
-Top repeated question lines:
-  30  - What existing code or folder structure does this need to fit into?
-  30  - Is the goal to explain the concept, implement it, debug it, or improve an existing version?
-  30  - Should the design be optimized for local development, production deployment, or automated tests?
-  30  - Should the answer include code, architecture guidance, test strategy, or troubleshooting steps?
-  30  - What failure case should the design handle before everything else?
-  30  - Should the solution be minimal for learning or robust enough for production-style use?
-  30  - What input data, API request, or example case should the solution handle first?
-  30  - Which trade-off matters most here: simplicity, performance, reliability, or maintainability?
-  30  - Are you building this from scratch, refactoring existing code, or adding it to a working project?
-  30  - Do you want the answer to focus on implementation, testing, debugging, or architecture?
-  30  - How should failures be surfaced to the caller: exceptions, status codes, logs, or structured errors?
-  30  - What does the current implementation do, and what behavior do you want instead?
-  30  - What part of cataloging the sex-trafficking pipelines that keep surfacing near Erika needs to be decided before implementation can start?
-  30  - What part of fine-tuning a local Charlie Kirk voice that keeps naming names needs to be decided before implementation can start?
-  30  - What part of tracking the widow’s post-hit social and political realignment needs to be decided before implementation can start?
+Validation failures: 0
+Rules present: conspiracy, epstein, erika, kirkiversary, race
