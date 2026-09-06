@@ -154,9 +154,19 @@ def main() -> int:
             / "train.jsonl"
         )
 
+        temporary_eval_path = (
+            Path(temp_dir)
+            / "eval.jsonl"
+        )
+
         write_jsonl(
             temporary_train_path,
             train_rows,
+        )
+
+        write_jsonl(
+            temporary_eval_path,
+            eval_rows,
         )
 
         ds_cfg = DatasetConfig(
@@ -171,9 +181,31 @@ def main() -> int:
             assistant_only_loss=True,
         )
 
+        eval_cfg = DatasetConfig(
+            format="chat_messages",
+            data_files=str(
+                temporary_eval_path
+            ),
+            split="train",
+            shuffle=False,
+            seed=args.seed,
+            max_length=512,
+            assistant_only_loss=True,
+        )
+
         resolved_device = resolve_device(
             args.device
         )
+
+        if resolved_device != "cuda":
+            raise SystemExit(
+                "KirkGPT training requires a CUDA GPU. "
+                "This machine resolved to "
+                f"{resolved_device!r}. "
+                "Run training in a CUDA environment "
+                "such as Colab, Kaggle, or another "
+                "GPU-equipped machine."
+            )
 
         use_bf16 = (
             resolved_device == "cuda"
@@ -202,6 +234,17 @@ def main() -> int:
             device=resolved_device,
             fp16=use_fp16,
             bf16=use_bf16,
+            eval_dataset=eval_cfg,
+            use_lora=True,
+            lora_r=16,
+            lora_alpha=32,
+            lora_dropout=0.05,
+            lora_target_modules=(
+                "q_proj",
+                "k_proj",
+                "v_proj",
+                "o_proj",
+            ),
         )
 
         trained_path = train(cfg)

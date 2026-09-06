@@ -5,7 +5,18 @@ from pathlib import Path
 from typing import Literal
 
 import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer, Trainer, TrainingArguments, set_seed
+from peft import (
+    LoraConfig,
+    TaskType,
+    get_peft_model,
+)
+from transformers import (
+    AutoModelForCausalLM,
+    AutoTokenizer,
+    Trainer,
+    TrainingArguments,
+    set_seed,
+)
 
 from llm_followups.tuning.dataset import DatasetConfig, build_dataset, summarize_dataset
 from llm_followups.utils.log import LogConfig, TrainingLogger, setup_logging
@@ -29,6 +40,33 @@ class TrainConfig:
     bf16: bool = False
     eval_split: str | None = None
     eval_steps: int | None = None
+    eval_dataset: DatasetConfig | None = None
+    use_lora: bool = True
+    lora_r: int = 16
+    lora_alpha: int = 32
+    lora_dropout: float = 0.05
+    lora_target_modules: tuple[str, ...] = (
+        "q_proj",
+        "k_proj",
+        "v_proj",
+        "o_proj",
+    )
+
+
+def build_lora_config(
+    cfg: TrainConfig,
+) -> LoraConfig:
+    return LoraConfig(
+        task_type=TaskType.CAUSAL_LM,
+        inference_mode=False,
+        r=cfg.lora_r,
+        lora_alpha=cfg.lora_alpha,
+        lora_dropout=cfg.lora_dropout,
+        target_modules=list(
+            cfg.lora_target_modules
+        ),
+        bias="none",
+    )
 
 
 def resolve_device(device: Literal["cpu", "cuda", "auto"]) -> str:
@@ -47,6 +85,7 @@ def load_model_and_tokenizer(
     model_name: str,
     *,
     device: str,
+    cfg: TrainConfig,
     fp16: bool = False,
     bf16: bool = False,
 ):
@@ -81,6 +120,13 @@ def load_model_and_tokenizer(
             model.generation_config.pad_token_id = tokenizer.pad_token_id
 
     model.to(torch.device(device))
+
+    if cfg.use_lora:
+        model = get_peft_model(
+            model,
+            build_lora_config(cfg),
+        )
+
     model.train()
     return tokenizer, model
 
@@ -117,7 +163,13 @@ class AssistantOnlyDataCollator:
         }
 
 
-def build_trainer(cfg: TrainConfig, model, tokenizer, train_ds) -> Trainer:
+def build_trainer(
+    cfg: TrainConfig,
+    model,
+    tokenizer,
+    train_ds,
+    eval_ds=None,
+) -> Trainer:
     cfg.output_dir.mkdir(parents=True, exist_ok=True)
 
     resolved = resolve_device(cfg.device)
@@ -137,12 +189,27 @@ def build_trainer(cfg: TrainConfig, model, tokenizer, train_ds) -> Trainer:
         fp16=fp16,
         bf16=bf16,
         remove_unused_columns=True,
+        eval_strategy=(
+            "steps"
+            if eval_ds is not None
+            and cfg.eval_steps is not None
+            else "epoch"
+            if eval_ds is not None
+            else "no"
+        ),
+        eval_steps=(
+            cfg.eval_steps
+            if eval_ds is not None
+            and cfg.eval_steps is not None
+            else None
+        ),
     )
 
     return Trainer(
         model=model,
         args=training_args,
         train_dataset=train_ds,
+        eval_dataset=eval_ds,
         processing_class=tokenizer,
         data_collator=AssistantOnlyDataCollator(tokenizer),
     )
@@ -161,14 +228,34 @@ def train(cfg: TrainConfig) -> Path:
     tokenizer, model = load_model_and_tokenizer(
         cfg.model_name,
         device=device,
+        cfg=cfg,
         fp16=cfg.fp16,
         bf16=cfg.bf16,
     )
 
-    train_ds = build_dataset(cfg.dataset, tokenizer)
-    tlog.on_dataset_summary(summarize_dataset(train_ds))
+    train_ds = build_dataset(
+        cfg.dataset,
+        tokenizer,
+    )
+    tlog.on_dataset_summary(
+        summarize_dataset(train_ds)
+    )
 
-    trainer = build_trainer(cfg, model, tokenizer, train_ds)
+    eval_ds = None
+
+    if cfg.eval_dataset is not None:
+        eval_ds = build_dataset(
+            cfg.eval_dataset,
+            tokenizer,
+        )
+
+    trainer = build_trainer(
+        cfg,
+        model,
+        tokenizer,
+        train_ds,
+        eval_ds,
+    )
 
     tlog.on_train_start(asdict(cfg))
     trainer.train()
@@ -212,6 +299,44 @@ def validate_train_config(cfg: TrainConfig) -> None:
         raise ValueError("bf16 requires CUDA device")
     if cfg.bf16 and resolved == "cuda" and not torch.cuda.is_bf16_supported():
         raise ValueError("bf16 was requested but this CUDA device does not support bf16")
+
+
+    if cfg.use_lora:
+        if cfg.lora_r < 1:
+            raise ValueError(
+                "lora_r must be >= 1"
+            )
+
+        if cfg.lora_alpha < 1:
+            raise ValueError(
+                "lora_alpha must be >= 1"
+            )
+
+        if not (
+            0.0
+            <= cfg.lora_dropout
+            < 1.0
+        ):
+            raise ValueError(
+                "lora_dropout must be "
+                ">= 0 and < 1"
+            )
+
+        if not cfg.lora_target_modules:
+            raise ValueError(
+                "lora_target_modules "
+                "must not be empty"
+            )
+
+        if any(
+            not module.strip()
+            for module
+            in cfg.lora_target_modules
+        ):
+            raise ValueError(
+                "lora_target_modules "
+                "must contain non-empty names"
+            )
 
 
 def main(argv: list[str] | None = None) -> int:

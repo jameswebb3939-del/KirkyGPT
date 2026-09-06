@@ -47,6 +47,11 @@ loadtest = [
   "locust>=2.32",
 ]
 
+train = [
+  "peft>=0.20,<0.21",
+  "accelerate>=1.13,<2",
+]
+
 
 [project.scripts]
 llm-followups = "llm_followups.client.cli:main"
