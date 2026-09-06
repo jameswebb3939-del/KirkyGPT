@@ -7,6 +7,7 @@ import type { ChatMessage } from "../types/chat";
 
 import ChatInput from "./ChatInput";
 import MessageBubble from "./MessageBubble";
+import KirkFace from "./KirkFace";
 
 interface ChatWindowProps {
   messages: ChatMessage[];
@@ -36,9 +37,7 @@ export default function ChatWindow({
       <div className="messages-container">
         {messages.length === 0 && (
           <div className="welcome-screen">
-            <div className="welcome-logo">
-              KirkGPT
-            </div>
+            <KirkFace size="large" />
 
             <h2>KirkGPT</h2>
 

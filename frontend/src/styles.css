@@ -566,3 +566,326 @@ textarea {
     opacity: 1;
   }
 }
+/* KirkGPT face motif */
+
+.kirk-face {
+  position: relative;
+
+  flex-shrink: 0;
+
+  overflow: hidden;
+
+  background:
+    linear-gradient(
+      145deg,
+      #e5b17c 0%,
+      #f2c697 44%,
+      #d99d6b 100%
+    );
+
+  border:
+    2px solid
+    rgba(66, 42, 30, 0.28);
+
+  box-shadow:
+    inset 0 -8px 14px
+      rgba(97, 52, 29, 0.12),
+    0 5px 18px
+      rgba(46, 29, 20, 0.15);
+}
+
+.kirk-face-small {
+  width: 42px;
+  height: 42px;
+
+  border-radius:
+    46% 46% 50% 50%;
+}
+
+.kirk-face-large {
+  width: 150px;
+  height: 172px;
+
+  border-radius:
+    46% 46% 49% 49%;
+}
+
+.kirk-hair {
+  position: absolute;
+
+  left: -4%;
+  top: -8%;
+
+  width: 108%;
+  height: 37%;
+
+  border-radius:
+    55% 55% 37% 37%;
+
+  background:
+    linear-gradient(
+      100deg,
+      #43291f 0%,
+      #65402c 42%,
+      #38221d 100%
+    );
+
+  transform: rotate(-2deg);
+}
+
+.kirk-part {
+  position: absolute;
+
+  left: 45%;
+  top: 0;
+
+  width: 6%;
+  height: 74%;
+
+  border-radius: 50%;
+
+  background:
+    rgba(228, 173, 120, 0.45);
+
+  transform: rotate(8deg);
+}
+
+.kirk-ear {
+  position: absolute;
+
+  top: 42%;
+
+  width: 13%;
+  height: 24%;
+
+  border-radius: 50%;
+
+  background: #d99d6b;
+
+  z-index: -1;
+}
+
+.kirk-ear-left {
+  left: -7%;
+}
+
+.kirk-ear-right {
+  right: -7%;
+}
+
+.kirk-brow {
+  position: absolute;
+
+  top: 38%;
+
+  width: 25%;
+  height: 5%;
+
+  border-radius: 50%;
+
+  background: #67402b;
+}
+
+.kirk-brow-left {
+  left: 18%;
+
+  transform: rotate(5deg);
+}
+
+.kirk-brow-right {
+  right: 18%;
+
+  transform: rotate(-5deg);
+}
+
+.kirk-eye {
+  position: absolute;
+
+  top: 45%;
+
+  width: 20%;
+  height: 9%;
+
+  overflow: hidden;
+
+  border-radius: 50%;
+
+  background: #f4eadb;
+
+  box-shadow:
+    inset 0 1px 2px
+      rgba(49, 31, 21, 0.35);
+}
+
+.kirk-eye-left {
+  left: 21%;
+}
+
+.kirk-eye-right {
+  right: 21%;
+}
+
+.kirk-pupil {
+  position: absolute;
+
+  left: 42%;
+  top: 18%;
+
+  width: 32%;
+  height: 68%;
+
+  border-radius: 50%;
+
+  background: #524233;
+}
+
+.kirk-nose {
+  position: absolute;
+
+  left: 48%;
+  top: 47%;
+
+  width: 8%;
+  height: 27%;
+
+  border-right:
+    2px solid
+    rgba(126, 75, 47, 0.45);
+
+  border-bottom:
+    2px solid
+    rgba(126, 75, 47, 0.35);
+
+  border-radius:
+    0 0 70% 30%;
+
+  transform: skewX(-5deg);
+}
+
+.kirk-mouth {
+  position: absolute;
+
+  left: 34%;
+  top: 76%;
+
+  width: 32%;
+  height: 6%;
+
+  border-bottom:
+    2px solid
+    #835145;
+
+  border-radius: 50%;
+
+  transform: rotate(-1deg);
+}
+
+.kirk-chin {
+  position: absolute;
+
+  left: 39%;
+  bottom: 5%;
+
+  width: 22%;
+  height: 8%;
+
+  border-bottom:
+    2px solid
+    rgba(103, 67, 47, 0.2);
+
+  border-radius: 50%;
+}
+
+.kirk-face-small .kirk-nose {
+  border-width: 1px;
+}
+
+.kirk-face-small .kirk-mouth {
+  border-bottom-width: 1px;
+}
+
+.kirk-face-small .kirk-chin {
+  border-bottom-width: 1px;
+}
+
+/* Kirk chat background */
+
+.chat-window {
+  position: relative;
+  isolation: isolate;
+
+  background: #ffffff;
+
+  overflow: hidden;
+}
+
+.chat-window::before {
+  content: "";
+
+  position: absolute;
+  inset: 0;
+
+  z-index: 0;
+
+  background-image:
+    linear-gradient(
+      rgba(255, 255, 255, 0.38),
+      rgba(255, 255, 255, 0.38)
+    ),
+    url("/kirk-chat-bg.jpg");
+
+  background-size: cover;
+  background-position: center 32%;
+  background-repeat: no-repeat;
+
+  opacity: 0.72;
+
+  pointer-events: none;
+}
+
+.messages-container {
+  position: relative;
+
+  z-index: 1;
+
+  background: transparent;
+}
+
+.chat-input-container {
+  position: relative;
+
+  z-index: 2;
+
+  background:
+    rgba(255, 255, 255, 0.92);
+
+  backdrop-filter: blur(10px);
+}
+
+.message-bubble {
+  position: relative;
+
+  z-index: 2;
+
+  box-shadow:
+    0 4px 14px
+    rgba(0, 0, 0, 0.12);
+}
+
+.message-user {
+  background:
+    rgba(32, 33, 35, 0.94);
+}
+
+.message-assistant {
+  background:
+    rgba(245, 240, 232, 0.94);
+
+  backdrop-filter: blur(4px);
+}
+
+.welcome-screen {
+  position: relative;
+
+  z-index: 2;
+}

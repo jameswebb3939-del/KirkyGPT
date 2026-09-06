@@ -1,3 +1,5 @@
+import KirkFace from "./KirkFace";
+
 interface HeaderProps {
   onToggleSidebar: () => void;
 }
@@ -13,12 +15,10 @@ export default function Header({
           onClick={onToggleSidebar}
           aria-label="Toggle sidebar"
         >
-          ☰
+          ?
         </button>
 
-        <div className="app-logo">
-          Kirk
-        </div>
+        <KirkFace size="small" />
       </div>
 
       <h1 className="app-title">
