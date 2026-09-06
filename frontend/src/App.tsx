@@ -9,18 +9,21 @@ import Sidebar from "./components/Sidebar";
 import ChatWindow from "./components/ChatWindow";
 
 import {
-  createConversation,
-  deleteConversation,
-  getConversation,
-  listConversations,
-  sendMessage,
-} from "./services/api";
+  createStoredConversation,
+  deleteStoredConversation,
+  getStoredConversation,
+  listStoredConversations,
+  saveStoredConversation,
+} from "./services/browserStorage";
+
+import {
+  browserRuleEngine,
+} from "./rules/runtime";
 
 import type {
-  ChatMessage,
   Conversation,
+  StoredMessage,
 } from "./types/chat";
-
 
 export default function App() {
   const [sidebarOpen, setSidebarOpen] =
@@ -58,23 +61,17 @@ export default function App() {
       ],
     );
 
-  /*
-   * Load conversation history
-   * from SQLite when KirkGPT starts.
-   */
   useEffect(() => {
     async function loadHistory() {
-      setError(null);
-
       try {
         const summaries =
-          await listConversations();
+          await listStoredConversations();
 
         const loaded =
           await Promise.all(
             summaries.map(
               (summary) =>
-                getConversation(
+                getStoredConversation(
                   summary.id,
                 ),
             ),
@@ -87,14 +84,10 @@ export default function App() {
             loaded[0].id,
           );
         }
-      } catch (err) {
-        if (err instanceof Error) {
-          setError(err.message);
-        } else {
-          setError(
-            "Could not load chat history.",
-          );
-        }
+      } catch {
+        setError(
+          "Could not load chat history.",
+        );
       }
     }
 
@@ -106,7 +99,7 @@ export default function App() {
 
     try {
       const conversation =
-        await createConversation();
+        await createStoredConversation();
 
       setConversations(
         (current) => [
@@ -118,65 +111,22 @@ export default function App() {
       setActiveConversationId(
         conversation.id,
       );
-    } catch (err) {
-      if (err instanceof Error) {
-        setError(err.message);
-      } else {
-        setError(
-          "Could not create conversation.",
-        );
-      }
+    } catch {
+      setError(
+        "Could not create conversation.",
+      );
     }
   }
 
   async function selectConversation(
     id: string,
   ) {
-    setError(null);
+    setActiveConversationId(id);
 
-    try {
-      const conversation =
-        await getConversation(id);
-
-      setConversations(
-        (current) => {
-          const exists =
-            current.some(
-              (item) =>
-                item.id === id,
-            );
-
-          if (!exists) {
-            return [
-              conversation,
-              ...current,
-            ];
-          }
-
-          return current.map(
-            (item) =>
-              item.id === id
-                ? conversation
-                : item,
-          );
-        },
-      );
-
-      setActiveConversationId(id);
-
-      if (
-        window.innerWidth <= 768
-      ) {
-        setSidebarOpen(false);
-      }
-    } catch (err) {
-      if (err instanceof Error) {
-        setError(err.message);
-      } else {
-        setError(
-          "Could not load conversation.",
-        );
-      }
+    if (
+      window.innerWidth <= 768
+    ) {
+      setSidebarOpen(false);
     }
   }
 
@@ -186,7 +136,7 @@ export default function App() {
     setError(null);
 
     try {
-      await deleteConversation(id);
+      await deleteStoredConversation(id);
 
       setConversations(
         (current) => {
@@ -197,27 +147,20 @@ export default function App() {
             );
 
           if (
-            activeConversationId ===
-            id
+            activeConversationId === id
           ) {
             setActiveConversationId(
-              remaining.length > 0
-                ? remaining[0].id
-                : null,
+              remaining[0]?.id ?? null,
             );
           }
 
           return remaining;
         },
       );
-    } catch (err) {
-      if (err instanceof Error) {
-        setError(err.message);
-      } else {
-        setError(
-          "Could not delete conversation.",
-        );
-      }
+    } catch {
+      setError(
+        "Could not delete conversation.",
+      );
     }
   }
 
@@ -225,147 +168,104 @@ export default function App() {
     content: string,
   ) {
     setError(null);
+    setIsLoading(true);
 
-    let conversation =
-      activeConversation;
+    try {
+      let conversation =
+        activeConversation;
 
-    /*
-     * Sending from the blank landing
-     * page automatically creates a chat.
-     */
-    if (!conversation) {
-      try {
+      if (!conversation) {
         conversation =
-          await createConversation();
-
-        setConversations(
-          (current) => [
-            conversation!,
-            ...current,
-          ],
-        );
+          await createStoredConversation();
 
         setActiveConversationId(
           conversation.id,
         );
-      } catch (err) {
-        if (err instanceof Error) {
-          setError(err.message);
-        }
-
-        return;
       }
-    }
 
-    const conversationId =
-      conversation.id;
+      const now =
+        new Date().toISOString();
 
-    /*
-     * Optimistically display the user's
-     * message while Llama generates.
-     */
-    const optimisticUser:
-      ChatMessage = {
-        role: "user",
-        content,
-      };
-
-    setConversations(
-      (current) =>
-        current.map(
-          (item) =>
-            item.id ===
-            conversationId
-              ? {
-                  ...item,
-
-                  messages: [
-                    ...item.messages,
-
-                    {
-                      id:
-                        `pending-${Date.now()}`,
-
-                      role:
-                        optimisticUser.role,
-
-                      content:
-                        optimisticUser.content,
-
-                      position:
-                        item.messages
-                          .length,
-
-                      created_at:
-                        new Date()
-                          .toISOString(),
-                    },
-                  ],
-                }
-              : item,
-        ),
-    );
-
-    setIsLoading(true);
-
-    try {
-      /*
-       * Backend:
-       *
-       * history → model
-       *         → transaction
-       *         → SQLite
-       */
-      const updated =
-        await sendMessage(
-          conversationId,
+      const userMessage:
+        StoredMessage = {
+          id: crypto.randomUUID(),
+          role: "user",
           content,
+          position:
+            conversation.messages.length,
+          created_at: now,
+        };
+
+      const messagesWithUser = [
+        ...conversation.messages,
+        userMessage,
+      ];
+
+      const assistantContent =
+        browserRuleEngine.respond(
+          messagesWithUser,
         );
 
-      /*
-       * Replace optimistic state with
-       * the authoritative SQLite data.
-       */
+      const assistantMessage:
+        StoredMessage = {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content:
+            assistantContent,
+          position:
+            messagesWithUser.length,
+          created_at:
+            new Date().toISOString(),
+        };
+
+      const firstUserMessage =
+        conversation.messages.length === 0;
+
+      const updated:
+        Conversation = {
+          ...conversation,
+
+          title:
+            firstUserMessage
+              ? content
+                  .trim()
+                  .slice(0, 48) ||
+                "New chat"
+              : conversation.title,
+
+          updated_at:
+            new Date().toISOString(),
+
+          messages: [
+            ...messagesWithUser,
+            assistantMessage,
+          ],
+        };
+
+      await saveStoredConversation(
+        updated,
+      );
+
       setConversations(
-        (current) =>
-          current.map(
-            (item) =>
-              item.id ===
-              conversationId
-                ? updated
-                : item,
-          ),
+        (current) => {
+          const withoutUpdated =
+            current.filter(
+              (item) =>
+                item.id !== updated.id,
+            );
+
+          return [
+            updated,
+            ...withoutUpdated,
+          ];
+        },
       );
     } catch (err) {
-      /*
-       * Reload from SQLite so failed
-       * optimistic messages disappear.
-       */
-      try {
-        const authoritative =
-          await getConversation(
-            conversationId,
-          );
-
-        setConversations(
-          (current) =>
-            current.map(
-              (item) =>
-                item.id ===
-                conversationId
-                  ? authoritative
-                  : item,
-            ),
-        );
-      } catch {
-        // Keep original error.
-      }
-
       if (err instanceof Error) {
         setError(err.message);
       } else {
         setError(
-          "Something went wrong while contacting the server.",
+          "Something went wrong.",
         );
       }
     } finally {
