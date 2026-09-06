@@ -179,6 +179,7 @@ def build_trainer(
     training_args = TrainingArguments(
         output_dir=str(cfg.output_dir),
         per_device_train_batch_size=cfg.batch_size,
+        per_device_eval_batch_size=cfg.batch_size,
         gradient_accumulation_steps=cfg.grad_accum_steps,
         learning_rate=cfg.lr,
         max_steps=cfg.max_steps if cfg.max_steps is not None else -1,
