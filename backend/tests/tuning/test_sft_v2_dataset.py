@@ -55,3 +55,91 @@ def test_chat_sft_rejects_example_without_assistant_answer() -> None:
         assistant_only_loss=True,
     )
     assert encoded["_valid_sft"] is False
+
+def test_chat_sft_supervises_all_assistant_turns() -> None:
+    row = {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Start topic",
+            },
+            {
+                "role": "assistant",
+                "content": "First assistant response",
+            },
+            {
+                "role": "user",
+                "content": "Continue topic",
+            },
+            {
+                "role": "assistant",
+                "content": "Second assistant response",
+            },
+        ]
+    }
+
+    encoded = _tokenize_chat_example(
+        row,
+        tokenizer=FakeTokenizer(),
+        max_length=512,
+        min_questions=3,
+        bullet_style="dash",
+        assistant_only_loss=True,
+    )
+
+    assert encoded["_valid_sft"] is True
+
+    labels = encoded["labels"]
+
+    supervised_regions = []
+    in_region = False
+    start = None
+
+    for index, label in enumerate(labels):
+        if (
+            label != -100
+            and not in_region
+        ):
+            start = index
+            in_region = True
+
+        elif (
+            label == -100
+            and in_region
+        ):
+            supervised_regions.append(
+                (start, index)
+            )
+            start = None
+            in_region = False
+
+    if in_region:
+        supervised_regions.append(
+            (start, len(labels))
+        )
+
+    assert len(supervised_regions) == 2
+
+    first_start, first_end = (
+        supervised_regions[0]
+    )
+
+    second_start, second_end = (
+        supervised_regions[1]
+    )
+
+    assert first_end > first_start
+    assert second_end > second_start
+
+    assert (
+        second_start
+        > first_end
+    )
+
+    assert all(
+        label == -100
+        for label
+        in labels[
+            first_end:second_start
+        ]
+    )

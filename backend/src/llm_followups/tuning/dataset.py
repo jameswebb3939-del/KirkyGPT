@@ -158,8 +158,11 @@ def _tokenize_chat_example(
     bullet_style: BulletStyle,
     assistant_only_loss: bool,
 ) -> dict[str, object]:
-    split = _split_last_assistant_turn(example.get("messages"))
-    if split is None:
+    messages = _normalise_messages(
+        example.get("messages")
+    )
+
+    if not messages:
         return {
             "input_ids": [],
             "attention_mask": [],
@@ -167,43 +170,120 @@ def _tokenize_chat_example(
             "_valid_sft": False,
         }
 
-    context, answer = split
-    full_messages = [*context, answer]
+    if not any(
+        message["role"] == "user"
+        for message in messages
+    ):
+        return {
+            "input_ids": [],
+            "attention_mask": [],
+            "labels": [],
+            "_valid_sft": False,
+        }
 
     full_ids = apply_chat_template_ids(
         tokenizer,
-        full_messages,
+        messages,
         min_questions=min_questions,
         bullet_style=bullet_style,
         add_generation_prompt=False,
     )
 
-    if assistant_only_loss:
-        prompt_ids = apply_chat_template_ids(
-            tokenizer,
-            context,
-            min_questions=min_questions,
-            bullet_style=bullet_style,
-            add_generation_prompt=True,
-        )
-    else:
-        prompt_ids = []
-
     input_ids = full_ids[:max_length]
-    attention_mask = [1] * len(input_ids)
 
-    if assistant_only_loss:
-        prompt_len = min(len(prompt_ids), len(input_ids))
-        labels = [-100] * prompt_len + input_ids[prompt_len:]
-    else:
+    attention_mask = [
+        1
+    ] * len(input_ids)
+
+    if not assistant_only_loss:
         labels = list(input_ids)
 
-    has_supervised_token = any(label != -100 for label in labels)
+    else:
+        labels = [
+            -100
+        ] * len(input_ids)
+
+        for index, message in enumerate(
+            messages
+        ):
+            if (
+                message["role"]
+                != "assistant"
+            ):
+                continue
+
+            context = messages[:index]
+
+            if not any(
+                item["role"] == "user"
+                for item in context
+            ):
+                continue
+
+            prompt_ids = (
+                apply_chat_template_ids(
+                    tokenizer,
+                    context,
+                    min_questions=(
+                        min_questions
+                    ),
+                    bullet_style=(
+                        bullet_style
+                    ),
+                    add_generation_prompt=True,
+                )
+            )
+
+            answer_prefix_ids = (
+                apply_chat_template_ids(
+                    tokenizer,
+                    messages[: index + 1],
+                    min_questions=(
+                        min_questions
+                    ),
+                    bullet_style=(
+                        bullet_style
+                    ),
+                    add_generation_prompt=False,
+                )
+            )
+
+            start_index = min(
+                len(prompt_ids),
+                len(input_ids),
+            )
+
+            end_index = min(
+                len(answer_prefix_ids),
+                len(input_ids),
+            )
+
+            if (
+                end_index
+                <= start_index
+            ):
+                continue
+
+            labels[
+                start_index:end_index
+            ] = input_ids[
+                start_index:end_index
+            ]
+
+    has_supervised_token = any(
+        label != -100
+        for label in labels
+    )
+
     return {
         "input_ids": input_ids,
-        "attention_mask": attention_mask,
+        "attention_mask":
+            attention_mask,
         "labels": labels,
-        "_valid_sft": bool(input_ids and has_supervised_token),
+        "_valid_sft": bool(
+            input_ids
+            and has_supervised_token
+        ),
     }
 
 

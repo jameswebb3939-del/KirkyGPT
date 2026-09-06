@@ -34,8 +34,8 @@ DEFAULT_OUTPUT = Path(
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Train the follow-up question "
-            "model using the canonical "
+            "Train KirkGPT using the "
+            "canonical rule-derived "
             "SFT dataset."
         )
     )
@@ -168,8 +168,6 @@ def main() -> int:
             shuffle=True,
             seed=args.seed,
             max_length=512,
-            min_questions=3,
-            bullet_style="dash",
             assistant_only_loss=True,
         )
 
