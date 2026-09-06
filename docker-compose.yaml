@@ -2,9 +2,6 @@ services:
   redis:
     image: redis:7-alpine
 
-    ports:
-      - "6379:6379"
-
     command:
       [
         "redis-server",
@@ -26,63 +23,6 @@ services:
       retries: 10
 
 
-  inference:
-    image: kirk-gpt-inference-gpu:production
-
-    build:
-      context: ./backend
-      dockerfile: Dockerfile.gpu
-      args:
-        CUDA_ARCHITECTURES: "86"
-
-    environment:
-      PYTHONPATH: /app/src
-
-      MODEL_NAME: Qwen2.5-1.5B-Instruct-Q4_K_M
-
-      NATIVE_MODEL_PATH: /models/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf
-      NATIVE_GPU_LAYERS: "999"
-      NATIVE_N_CTX: "2048"
-      NATIVE_N_BATCH: "512"
-
-      NATIVE_MAX_BATCH_SIZE: "4"
-      NATIVE_MAX_QUEUE_SIZE: "64"
-      NATIVE_BATCH_WAIT_MS: "4"
-      NATIVE_BATCH_PARALLELISM: "1"
-
-      MAX_NEW_TOKENS: "64"
-      TEMPERATURE: "0.2"
-      TOP_P: "0.9"
-
-    volumes:
-      - ./backend/models:/models:ro
-
-    ports:
-      - "8000:8000"
-
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities:
-                - gpu
-
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "/app/.venv/bin/python",
-          "-c",
-          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=2).read()"
-        ]
-      interval: 10s
-      timeout: 5s
-      retries: 12
-      start_period: 60s
-
-
   backend:
     build:
       context: ./backend
@@ -94,29 +34,24 @@ services:
       SERVER_HOST: 0.0.0.0
       SERVER_PORT: "8000"
 
-      INFERENCE_BASE_URL: http://inference:8000
-      REQUEST_TIMEOUT_S: ${REQUEST_TIMEOUT_S:-60.0}
+      RULES_ONLY: "true"
 
       REDIS_ENABLED: "true"
       REDIS_URL: redis://redis:6379/0
-      REDIS_CACHE_TTL_S: ${REDIS_CACHE_TTL_S:-300}
-      REDIS_KEY_PREFIX: ${REDIS_KEY_PREFIX:-kirk_gpt}
+      REDIS_CACHE_TTL_S: "300"
+      REDIS_KEY_PREFIX: kirk_gpt
 
-      REDIS_CHAT_CACHE_ENABLED: ${REDIS_CHAT_CACHE_ENABLED:-true}
-      REDIS_CHAT_CACHE_TTL_S: ${REDIS_CHAT_CACHE_TTL_S:-600}
+      REDIS_CHAT_CACHE_ENABLED: "true"
+      REDIS_CHAT_CACHE_TTL_S: "600"
 
     volumes:
-      - ./backend/data:/app/data
-      - ./backend/outputs:/app/outputs:ro
+      - ./data:/app/data
 
     ports:
-      - "8001:8000"
+      - "8010:8000"
 
     depends_on:
       redis:
-        condition: service_healthy
-
-      inference:
         condition: service_healthy
 
 
@@ -129,4 +64,5 @@ services:
       - "3000:80"
 
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
