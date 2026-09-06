@@ -18,13 +18,13 @@ def make_results() -> list[EvaluatedExample]:
         EvaluatedExample(
             example=EvalExample(
                 id=1,
-                input="Explain Docker",
-                expected_output="- What do you need?",
+                input="Help me with Kirk",
+                expected_output="- Are you mourning or hunting?",
                 metadata={"source": "test"},
             ),
             prediction=EvalPrediction(
                 example_id=1,
-                output="- What environment are you using?",
+                output="- Are you mourning Charlie for the Kirkiversary?",
                 raw_output="raw output",
                 metadata={
                     "latency_ms": 123,
@@ -56,8 +56,8 @@ def test_json_reporter_writes_complete_result_model(tmp_path) -> None:
 
     assert len(data) == 1
     assert data[0]["example"]["id"] == 1
-    assert data[0]["example"]["input"] == "Explain Docker"
-    assert data[0]["prediction"]["output"] == "- What environment are you using?"
+    assert data[0]["example"]["input"] == "Help me with Kirk"
+    assert data[0]["prediction"]["output"] == "- Are you mourning Charlie for the Kirkiversary?"
     assert data[0]["prediction"]["metadata"]["latency_ms"] == 123
     assert data[0]["evaluations"][0]["evaluator"] == "coherence"
     assert data[0]["evaluations"][0]["score"] == 3.0
@@ -84,9 +84,9 @@ def test_csv_reporter_writes_serialized_metadata_and_evaluations(
 
     row = rows[0]
     assert row["id"] == "1"
-    assert row["input"] == "Explain Docker"
-    assert row["expected_output"] == "- What do you need?"
-    assert row["output"] == "- What environment are you using?"
+    assert row["input"] == "Help me with Kirk"
+    assert row["expected_output"] == "- Are you mourning or hunting?"
+    assert row["output"] == "- Are you mourning Charlie for the Kirkiversary?"
     assert row["raw_output"] == "raw output"
 
     prediction_metadata = json.loads(row["prediction_metadata"])

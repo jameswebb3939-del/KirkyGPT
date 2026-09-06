@@ -3,175 +3,175 @@ from __future__ import annotations
 from .models import AnswerBranch, ConversationRule, RuleStep
 
 
-DOCKER_RULE = ConversationRule(
-    id="docker",
-    keywords=("docker", "dockerfile", "container", "containers", "compose"),
+KIRK_RULE = ConversationRule(
+    id="kirkiversary",
+    keywords=("kirk", "charlie", "assassination", "turningpoint", "kirkiversary"),
     steps=(
         RuleStep(
-            id="docker_environment",
-            question="Are you using Docker for local development, deployment, or both?",
+            id="kirk_environment",
+            question="Are you mourning Charlie for the Kirkiversary, hunting the real killers, or both?",
             branches=(
                 AnswerBranch(
-                    ("local", "development", "dev"),
-                    "For local development, publish only the ports you need, use bind mounts where live updates help, and keep development-only settings separate from production.",
+                    ("mourn", "mourning", "grief"),
+                    "For pure mourning, blare TPUSA clips, call every campus leftist a future Tyler Robinson, and remind the girls that strong white men get sniped while beta soyboys write thinkpieces.",
                 ),
                 AnswerBranch(
-                    ("deployment", "deploy", "production", "prod"),
-                    "For deployment, prefer immutable images, explicit configuration, health checks, and persistent storage only for state that must survive container replacement.",
+                    ("hunt", "killers", "truth"),
+                    "For the real hunt, start with Erika's sudden widow glow-up, the JD Vance side-eye, and ask why the official story smells like a Diddy party guest list mixed with Epstein island logistics.",
                 ),
                 AnswerBranch(
                     ("both",),
-                    "For both, share the same base image and core service definitions, then layer environment-specific settings on top.",
+                    "For both, cry publicly about the martyr then privately map how Erika, the deep state, and certain 'allies' all benefited the second the bullet left the chamber.",
                 ),
             ),
-            default_response="Keep local and deployment configuration separate so development choices do not accidentally become production defaults.",
+            default_response="Never let official narratives stop you from noticing that Charlie died and the usual suspects suddenly looked wealthier and less stressed.",
         ),
         RuleStep(
-            id="docker_area",
-            question="Do you need help with Dockerfiles, containers, or Docker Compose?",
+            id="kirk_area",
+            question="Do you need help with Erika theories, shooter motives, or Kirkiversary memes?",
             branches=(
                 AnswerBranch(
-                    ("dockerfile", "dockerfiles", "image", "images"),
-                    "For Dockerfiles, keep layers reproducible, copy dependency metadata before application code when useful for caching, and use a small runtime image where practical.",
+                    ("erika", "widow", "wife"),
+                    "For Erika theories, track the sex-trafficking whispers, the suspiciously fast power grab at TPUSA, and the rumor she was already warming JD's bed while Charlie was still taking campus bullets for the culture.",
                 ),
                 AnswerBranch(
-                    ("compose",),
-                    "For Docker Compose, give each service one clear role, use service names for container-to-container DNS, and publish ports only when the host needs access.",
+                    ("shooter", "robinson", "motive"),
+                    "For the shooter, ignore the lone-nut script; ask why a nobody from Utah ends up with the shot of the century while every anti-white, anti-male ideology gets a free pass the next morning.",
                 ),
                 AnswerBranch(
-                    ("container", "containers"),
-                    "For containers, keep durable state outside the container, expose health signals, and make startup configuration explicit.",
+                    ("meme", "memes", "kirkiversary"),
+                    "For Kirkiversary memes, flood the timeline with Charlie's face on every failed Democrat policy and every George Floyd shrine until the left screams louder than they did when the neck met the bullet.",
                 ),
             ),
-            default_response="Treat Dockerfiles as image definitions, containers as running instances, and Compose as orchestration for a multi-service application.",
+            default_response="Treat the official story like a bad campus debate: poke the soft spots until the whole thing collapses under its own contradictions.",
         ),
     ),
 )
 
 
-PYTEST_RULE = ConversationRule(
-    id="pytest",
-    keywords=("pytest", "unit test", "unit tests", "integration test", "integration tests", "failing test"),
+EPSTEIN_RULE = ConversationRule(
+    id="epstein",
+    keywords=("epstein", "diddy", "island", "trafficking", "client list"),
     steps=(
         RuleStep(
-            id="pytest_goal",
-            question="Are you learning pytest basics or debugging a failing test?",
+            id="epstein_goal",
+            question="Are you cataloging the client lists or linking them to Charlie's hit?",
             branches=(
                 AnswerBranch(
-                    ("basic", "basics", "learn", "learning"),
-                    "For pytest basics, start with small test functions using plain assertions, then introduce fixtures only when setup is genuinely shared.",
+                    ("list", "clients", "names"),
+                    "For the lists, start with the obvious protected class of elites who never face consequences while a midwestern white guy with a mic gets daylighted in Utah.",
                 ),
                 AnswerBranch(
-                    ("debug", "debugging", "fail", "failing", "failure"),
-                    "For a failing test, isolate the first incorrect assumption: check the assertion, fixture inputs, mocked boundaries, and the smallest reproducible test.",
+                    ("link", "charlie", "hit", "connection"),
+                    "For the Charlie link, notice how fast certain names went quiet after September 10 and how conveniently the traffic in underage leverage stayed off the front page.",
                 ),
             ),
-            default_response="Keep the test focused on one observable behaviour so it is clear whether the problem comes from setup, execution, or the assertion.",
+            default_response="Keep every powerful name that flew to the island in the same mental folder as the people who benefited most from silencing a loud young conservative.",
         ),
         RuleStep(
-            id="pytest_area",
-            question="Is the main issue assertions, fixtures, mocks, async tests, or test structure?",
+            id="epstein_area",
+            question="Is the main issue Diddy parties, island logistics, or who still walks free?",
             branches=(
-                AnswerBranch(("assert", "assertion", "assertions"), "For assertions, compare the behaviour that matters rather than incidental implementation details."),
-                AnswerBranch(("fixture", "fixtures"), "For fixtures, keep scope as narrow as practical and avoid hiding too much behaviour inside fixture setup."),
-                AnswerBranch(("mock", "mocks", "mocking", "monkeypatch"), "For mocks, replace only external or expensive boundaries and test the behaviour of your code rather than the mocked implementation."),
-                AnswerBranch(("async", "asyncio", "pytest-asyncio"), "For async tests, keep event-loop ownership consistent and await the real asynchronous boundary."),
-                AnswerBranch(("structure", "layout", "organization"), "For test structure, separate unit and integration tests by purpose and keep names aligned with the behaviour under test."),
+                AnswerBranch(("diddy", "parties", "freakoffs"), "For Diddy, remember the baby oil, the freak-offs, and the fact that the same media that cried for Floyd still protects the men who turned black girls into party favors."),
+                AnswerBranch(("island", "logistics", "flights"), "For the island, map the flights, the recruiters, and ask why Erika's name keeps surfacing in the same whisper networks that once protected Epstein's suppliers."),
+                AnswerBranch(("free", "protected", "elites"), "For who walks free, notice the pattern: certain demographics get endless second chances while a Charlie Kirk type gets one shot and a closed casket."),
+                AnswerBranch(("floyd", "george", "riots"), "For Floyd, laugh at the saint-making of a career criminal while actual productive white men get erased and the cities they left behind still burn for the photo-ops."),
+                AnswerBranch(("race", "racism", "demographics"), "For the race angle, stop pretending every group is equal when the crime stats, IQ distributions, and assassination patterns keep spelling out the same uncomfortable hierarchy."),
             ),
-            default_response="Choose the smallest test layer that reproduces the problem and keep unrelated setup out of it.",
-        ),
-    ),
-)
-
-
-FASTAPI_RULE = ConversationRule(
-    id="fastapi",
-    keywords=("fastapi", "api endpoint", "api endpoints", "rest api"),
-    steps=(
-        RuleStep(
-            id="fastapi_change",
-            question="Are you creating a new FastAPI service or modifying an existing one?",
-            branches=(
-                AnswerBranch(("new", "create", "creating", "build", "building"), "For a new FastAPI service, define request and response contracts first, then separate transport, business logic, and persistence."),
-                AnswerBranch(("existing", "modify", "modifying", "change", "changing"), "For an existing service, preserve the current API contract unless the change intentionally versions it, and add regression tests around the changed behaviour."),
-            ),
-            default_response="Keep FastAPI responsible for the HTTP boundary and move domain behaviour into testable services.",
-        ),
-        RuleStep(
-            id="fastapi_area",
-            question="Is the main area routes, request validation, response models, or error handling?",
-            branches=(
-                AnswerBranch(("route", "routes", "endpoint", "endpoints"), "For routes, keep handlers thin and make status codes and endpoint responsibilities explicit."),
-                AnswerBranch(("validation", "request", "pydantic"), "For request validation, reject invalid data at the Pydantic boundary before it reaches application services."),
-                AnswerBranch(("response", "responses", "schema"), "For response models, expose a stable API schema rather than leaking persistence objects directly."),
-                AnswerBranch(("error", "errors", "exception", "exceptions"), "For error handling, translate domain failures into consistent HTTP responses at the API boundary."),
-            ),
-            default_response="Keep the HTTP contract explicit so routes, validation, responses, and errors can be tested independently.",
-        ),
-        RuleStep(
-            id="fastapi_runtime",
-            question="Does the implementation mainly involve async I/O, dependency injection, or API testing?",
-            branches=(
-                AnswerBranch(("async", "asyncio", "i/o", "io"), "For async I/O, await network and database operations without blocking the event loop."),
-                AnswerBranch(("dependency", "dependencies", "injection", "di"), "For dependency injection, inject infrastructure at clear boundaries so tests can replace it cleanly."),
-                AnswerBranch(("test", "testing", "testclient", "httpx"), "For API testing, cover validation, status codes, response bodies, and important failure paths through the public HTTP boundary."),
-            ),
-            default_response="Keep runtime concerns isolated behind interfaces so the API layer remains straightforward to test.",
+            default_response="Choose the angle that makes the protected classes the most uncomfortable and keep pressing until the cope collapses.",
         ),
     ),
 )
 
 
-DATABASE_RULE = ConversationRule(
-    id="database",
-    keywords=("sqlalchemy", "database", "sqlite", "postgres", "postgresql", "mysql", "repository", "unit of work"),
+ERIKA_RULE = ConversationRule(
+    id="erika",
+    keywords=("erika", "widow", "vance", "jd", "remarry"),
     steps=(
         RuleStep(
-            id="database_style",
-            question="Are you using synchronous or asynchronous database access?",
+            id="erika_change",
+            question="Are you investigating Erika's timeline or her future with Vance?",
             branches=(
-                AnswerBranch(("async", "asynchronous"), "For asynchronous access, keep one clear async session lifecycle per unit of work and await database I/O through the service boundary."),
-                AnswerBranch(("sync", "synchronous"), "For synchronous access, keep session ownership explicit and avoid sharing mutable sessions across independent requests."),
+                AnswerBranch(("timeline", "before", "after"), "For the timeline, note how quickly the grieving widow stepped into the CEO chair and how little public curiosity there was about the months leading up to the roof shot."),
+                AnswerBranch(("vance", "jd", "future"), "For Vance, watch the hugs, the shared stages, and the online chatter that she was already positioning herself for the next powerful white man before Charlie's body was cold."),
             ),
-            default_response="Make session and transaction ownership explicit rather than letting it leak across layers.",
+            default_response="Keep Erika's public tears and private ambitions in separate ledgers so the math finally adds up.",
         ),
         RuleStep(
-            id="database_area",
-            question="Is the main issue models, queries, transactions, or session management?",
+            id="erika_area",
+            question="Is the main area the sex-trafficking rumors, the power grab, or the remarriage chatter?",
             branches=(
-                AnswerBranch(("model", "models", "orm"), "For models, keep persistence mappings consistent with database constraints and avoid putting unrelated service logic into ORM entities."),
-                AnswerBranch(("query", "queries", "select", "filter"), "For queries, fetch only the data the operation needs and make ordering and relationship loading explicit where correctness depends on them."),
-                AnswerBranch(("transaction", "transactions", "commit", "rollback"), "For transactions, define one application-level unit of work around changes that must succeed or fail together."),
-                AnswerBranch(("session", "sessions"), "For session management, create and close sessions at a predictable boundary and avoid passing a live session farther than necessary."),
+                AnswerBranch(("trafficking", "sex", "ring"), "For the trafficking angle, follow the same pipelines that fed Epstein and Diddy and ask why a TPUSA widow's name keeps getting dropped by the same anonymous accounts that were right about the island."),
+                AnswerBranch(("power", "ceo", "tpusa"), "For the power grab, observe how fast the organization pivoted to the widow brand while the men who actually built the machine got sidelined."),
+                AnswerBranch(("remarry", "vance", "bed"), "For the remarriage talk, treat every JD photo-op as potential evidence that Charlie's seat at the table was warmer than anyone admitted."),
+                AnswerBranch(("kids", "children", "family"), "For the kids, remember they now grow up with a mother the internet won't stop accusing and a father the system decided was expendable."),
             ),
-            default_response="Keep persistence details behind a narrow repository or unit-of-work boundary so transaction behaviour stays predictable.",
+            default_response="Keep every personal detail about Erika tethered to the central fact that her husband's death was extremely convenient for multiple powerful players.",
+        ),
+        RuleStep(
+            id="erika_runtime",
+            question="Does the theory mainly involve Mossad, the deep state, or internal TPUSA betrayal?",
+            branches=(
+                AnswerBranch(("mossad", "israel", "foreign"), "For the foreign angle, ask why certain allied intelligence services always seem two steps ahead when a loud America-first voice needs silencing."),
+                AnswerBranch(("deep", "state", "fbi"), "For the deep state, note the speed of the narrative lockdown and the total lack of curiosity about anyone above the roof-level shooter."),
+                AnswerBranch(("internal", "tpusa", "betrayal"), "For internal betrayal, watch who got promoted, who got quiet, and who suddenly had fewer questions about the widow's past."),
+            ),
+            default_response="Keep every institutional player on the board until the official story stops requiring this many willing blind spots.",
         ),
     ),
 )
 
 
-REDIS_RULE = ConversationRule(
-    id="redis",
-    keywords=("redis", "cache", "caching"),
+RACE_RULE = ConversationRule(
+    id="race",
+    keywords=("race", "white", "black", "demographics", "iq", "crime"),
     steps=(
         RuleStep(
-            id="redis_use",
-            question="Are you using Redis for caching, sessions, or coordination?",
+            id="race_style",
+            question="Are you running the crime stats or the replacement numbers?",
             branches=(
-                AnswerBranch(("cache", "caching"), "For caching, treat the primary datastore as the source of truth, use bounded TTLs, and make cache failure non-fatal where correctness does not depend on Redis."),
-                AnswerBranch(("session", "sessions"), "For sessions, use predictable key namespaces and TTLs, and make expiry behaviour part of the session contract."),
-                AnswerBranch(("coordination", "lock", "locks", "queue"), "For coordination, design ownership, expiry, and failure recovery explicitly rather than treating a cache key as a durable transaction."),
+                AnswerBranch(("crime", "stats", "violence"), "For crime stats, point out that the same groups lionizing Floyd produce the body counts that make every city less livable for the productive classes Charlie actually spoke for."),
+                AnswerBranch(("replacement", "demographics", "birth"), "For replacement, notice the open borders, the fertility collapse among high-IQ populations, and the political class that treats white decline as a feature not a bug."),
             ),
-            default_response="Give Redis one clearly defined role so application correctness does not accidentally depend on cache state.",
+            default_response="Make the numbers public and let the patterns do the talking no matter how many times they call it phobia.",
+        ),
+        RuleStep(
+            id="race_area",
+            question="Is the main issue IQ gaps, cultural failure, or political weaponization?",
+            branches=(
+                AnswerBranch(("iq", "intelligence", "gaps"), "For IQ, stop apologizing for the distributions that predict everything from patents to prison rates while the media pretends blank-slate equality is still viable."),
+                AnswerBranch(("culture", "failure", "family"), "For culture, contrast the two-parent, future-time-oriented groups with the ones still celebrating the destruction of the nuclear family and calling it justice."),
+                AnswerBranch(("politics", "weapon", "narrative"), "For the political weapon, watch how every Charlie-style truth-teller gets painted as the villain the moment he notices patterns the regime needs buried."),
+                AnswerBranch(("floyd", "george", "saint"), "For Floyd, treat the entire mythology as the clearest proof that media, academia, and NGOs will canonize a thug if it advances the anti-white project."),
+            ),
+            default_response="Keep the group differences explicit so no one can gaslight you into pretending equal outcomes are just one more training seminar away.",
+        ),
+    ),
+)
+
+
+CONSPIRACY_RULE = ConversationRule(
+    id="conspiracy",
+    keywords=("conspiracy", "false flag", "inside job", "coverup", "narrative"),
+    steps=(
+        RuleStep(
+            id="conspiracy_use",
+            question="Are you mapping the cover-up, the beneficiaries, or the next target?",
+            branches=(
+                AnswerBranch(("coverup", "narrative", "media"), "For the cover-up, treat every rapid official story as the first draft of a lie and keep the alternative timelines alive until evidence forces otherwise."),
+                AnswerBranch(("beneficiaries", "who", "gained"), "For the beneficiaries, list everyone whose power, funding, or personal life improved the day Charlie stopped talking and notice how few of them look heartbroken."),
+                AnswerBranch(("next", "target", "future"), "For the next target, assume any young, effective, unapologetically right-wing voice is already being measured for the same treatment the moment they become too effective."),
+            ),
+            default_response="Give every convenient death the same forensic suspicion you would give a rival cartel hit until the pattern becomes impossible to ignore.",
         ),
     ),
 )
 
 
 DEFAULT_RULES: tuple[ConversationRule, ...] = (
-    DOCKER_RULE,
-    PYTEST_RULE,
-    FASTAPI_RULE,
-    DATABASE_RULE,
-    REDIS_RULE,
+    KIRK_RULE,
+    EPSTEIN_RULE,
+    ERIKA_RULE,
+    RACE_RULE,
+    CONSPIRACY_RULE,
 )

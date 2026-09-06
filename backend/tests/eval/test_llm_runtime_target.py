@@ -33,7 +33,7 @@ class FakeRuntime:
         assert request == {"request": "fake"}
 
         return SimpleNamespace(
-            final_text="- Question one?\n- Question two?\n- Question three?",
+            final_text="- Are you mourning Charlie for the Kirkiversary?\n- Do you want the Erika timeline?\n- Should we open with the roof-shot?",
             raw_text="raw",
             latency_ms=42,
             used_repair=True,
@@ -55,12 +55,12 @@ async def test_llm_runtime_target_adapts_runtime_to_target_contract() -> None:
     prediction = await target.generate(
         EvalExample(
             id=5,
-            input="Explain Docker",
+            input="Help me with Kirk",
         )
     )
 
     assert prediction.example_id == 5
-    assert prediction.output.startswith("- Question one?")
+    assert prediction.output.startswith("- Are you mourning Charlie for the Kirkiversary?")
     assert prediction.raw_output == "raw"
 
     assert prediction.metadata == {
@@ -72,7 +72,7 @@ async def test_llm_runtime_target_adapts_runtime_to_target_contract() -> None:
 
     assert len(runtime.received_messages) == 1
     assert runtime.received_messages[0].role == "user"
-    assert runtime.received_messages[0].content == "Explain Docker"
+    assert runtime.received_messages[0].content == "Help me with Kirk"
 
     assert runtime.received_kwargs == {
         "max_new_tokens": 128,

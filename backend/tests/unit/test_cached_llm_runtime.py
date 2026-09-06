@@ -111,9 +111,9 @@ class FakeRuntime:
                 f"{self.generate_calls}"
             ),
             final_text=(
-                "- Question one?\n"
-                "- Question two?\n"
-                "- Question three?"
+                "- Are you mourning Charlie for the Kirkiversary?\n"
+                "- Do you want the Erika timeline?\n"
+                "- Should we open with the roof-shot?"
             ),
             used_fallback=False,
             used_repair=False,
@@ -155,7 +155,7 @@ async def test_identical_request_hits_cache():
     )
 
     request = make_request(
-        "Explain Docker"
+        "Help me with Kirk"
     )
 
     first = await service.generate(
@@ -191,13 +191,13 @@ async def test_different_messages_do_not_collide():
 
     await service.generate(
         make_request(
-            "Explain Docker"
+            "Help me with Kirk"
         )
     )
 
     await service.generate(
         make_request(
-            "Explain Redis"
+            "Help me with conspiracy"
         )
     )
 
@@ -221,14 +221,14 @@ async def test_generation_parameters_affect_key():
 
     await service.generate(
         make_request(
-            "Explain Docker",
+            "Help me with Kirk",
             max_new_tokens=64,
         )
     )
 
     await service.generate(
         make_request(
-            "Explain Docker",
+            "Help me with Kirk",
             max_new_tokens=128,
         )
     )
@@ -255,7 +255,7 @@ async def test_full_context_affects_key():
         messages=[
             ChatMessage(
                 role="user",
-                content="Docker",
+                content="Kirk",
             ),
         ],
         max_new_tokens=64,
@@ -273,12 +273,12 @@ async def test_full_context_affects_key():
             ChatMessage(
                 role="assistant",
                 content=(
-                    "- Earlier question?"
+                    "- Are you mourning Charlie?"
                 ),
             ),
             ChatMessage(
                 role="user",
-                content="Docker",
+                content="Kirk",
             ),
         ],
         max_new_tokens=64,

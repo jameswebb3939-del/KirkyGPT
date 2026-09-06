@@ -22,10 +22,10 @@ def test_loads_sft_messages(tmp_path) -> None:
         [
             {
                 "messages": [
-                    {"role": "user", "content": "Explain Docker"},
+                    {"role": "user", "content": "Help me with Kirk"},
                     {
                         "role": "assistant",
-                        "content": "- What do you want to know?",
+                        "content": "- Are you mourning Charlie for the Kirkiversary?",
                     },
                 ],
                 "source": "sft",
@@ -38,16 +38,16 @@ def test_loads_sft_messages(tmp_path) -> None:
 
     assert len(examples) == 1
     assert examples[0].id == 0
-    assert examples[0].input == "Explain Docker"
-    assert examples[0].expected_output == "- What do you want to know?"
+    assert examples[0].input == "Help me with Kirk"
+    assert examples[0].expected_output == "- Are you mourning Charlie for the Kirkiversary?"
     assert examples[0].metadata["source"] == "sft"
 
 
 @pytest.mark.parametrize(
     ("field", "value"),
     [
-        ("prompt", "Explain Redis"),
-        ("user_message", "Explain FastAPI"),
+        ("prompt", "Help me with conspiracy"),
+        ("user_message", "Help me with Erika"),
     ],
 )
 def test_loads_supported_plain_input_shapes(

@@ -20,10 +20,10 @@ class FakeTokenizer:
 def test_chat_sft_masks_prompt_and_supervises_assistant_tokens() -> None:
     row = {
         "messages": [
-            {"role": "user", "content": "Help with Docker"},
+            {"role": "user", "content": "Help me with Kirk"},
             {
                 "role": "assistant",
-                "content": "- Question one?\n- Question two?\n- Question three?",
+                "content": "- Are you mourning Charlie for the Kirkiversary?\n- Do you want the Erika timeline?\n- Should we open with the roof-shot?",
             },
         ]
     }
@@ -47,7 +47,7 @@ def test_chat_sft_masks_prompt_and_supervises_assistant_tokens() -> None:
 
 def test_chat_sft_rejects_example_without_assistant_answer() -> None:
     encoded = _tokenize_chat_example(
-        {"messages": [{"role": "user", "content": "Docker"}]},
+        {"messages": [{"role": "user", "content": "Kirk"}]},
         tokenizer=FakeTokenizer(),
         max_length=512,
         min_questions=3,

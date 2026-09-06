@@ -36,7 +36,7 @@ def test_native_runtime_make_request() -> None:
         [
             ChatMessage(
                 role="user",
-                content="Explain Docker",
+                content="Help me with Kirk",
             )
         ]
     )
@@ -60,7 +60,7 @@ def test_native_runtime_request_overrides() -> None:
         [
             ChatMessage(
                 role="user",
-                content="Explain Redis",
+                content="Help me with conspiracy",
             )
         ],
         max_new_tokens=128,

@@ -73,7 +73,7 @@ async def test_rubric_evaluator_uses_judge() -> None:
     )
 
     result = await evaluator.evaluate(
-        EvalExample(id=1, input="Explain Docker"),
+        EvalExample(id=1, input="Help me with Kirk"),
         EvalPrediction(example_id=1, output="A clear answer"),
     )
 
@@ -84,7 +84,7 @@ async def test_rubric_evaluator_uses_judge() -> None:
     assert result.metadata["judge_provider"] == "fake"
 
     assert len(judge.calls) == 1
-    assert judge.calls[0]["input_text"] == "Explain Docker"
+    assert judge.calls[0]["input_text"] == "Help me with Kirk"
     assert judge.calls[0]["output_text"] == "A clear answer"
     assert "Evaluate coherence" in judge.calls[0]["instructions"]
     assert "3 = excellent" in judge.calls[0]["instructions"]
@@ -98,7 +98,7 @@ async def test_rubric_evaluator_fails_below_threshold() -> None:
     )
 
     result = await evaluator.evaluate(
-        EvalExample(id=1, input="Explain Docker"),
+        EvalExample(id=1, input="Help me with Kirk"),
         EvalPrediction(example_id=1, output="Poor answer"),
     )
 
@@ -114,7 +114,7 @@ async def test_rubric_without_threshold_has_no_pass_fail() -> None:
     )
 
     result = await evaluator.evaluate(
-        EvalExample(id=1, input="Explain Docker"),
+        EvalExample(id=1, input="Help me with Kirk"),
         EvalPrediction(example_id=1, output="Answer"),
     )
 

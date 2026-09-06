@@ -10,9 +10,9 @@ from llm_followups.eval.evaluators.format import (
 
 
 VALID = (
-    "- What environment are you using?\n"
-    "- What are you trying to deploy?\n"
-    "- Are you using Docker Compose?"
+    "- Are you mourning Charlie for the Kirkiversary?\n"
+    "- Do you want the Erika timeline or the beneficiary list?\n"
+    "- Should we open with the roof-shot or the cover-up?"
 )
 
 
@@ -22,7 +22,7 @@ async def test_valid_final_followup_format_passes() -> None:
         min_questions=3,
         bullet_style="dash",
     ).evaluate(
-        EvalExample(id=1, input="Help me with Docker"),
+        EvalExample(id=1, input="Help me with Kirk"),
         EvalPrediction(example_id=1, output=VALID),
     )
 
@@ -42,10 +42,10 @@ async def test_raw_format_is_evaluated_before_guardrails() -> None:
     )
 
     final_result = await FollowupFormatEvaluator().evaluate(
-        EvalExample(id=1, input="Docker"), prediction
+        EvalExample(id=1, input="Kirk"), prediction
     )
     raw_result = await RawFollowupFormatEvaluator().evaluate(
-        EvalExample(id=1, input="Docker"), prediction
+        EvalExample(id=1, input="Kirk"), prediction
     )
 
     assert final_result.passed is True
@@ -57,7 +57,7 @@ async def test_raw_format_is_evaluated_before_guardrails() -> None:
 @pytest.mark.asyncio
 async def test_missing_raw_output_fails_raw_evaluator() -> None:
     result = await RawFollowupFormatEvaluator().evaluate(
-        EvalExample(id=1, input="Docker"),
+        EvalExample(id=1, input="Kirk"),
         EvalPrediction(example_id=1, output=VALID, raw_output=None),
     )
     assert result.passed is False

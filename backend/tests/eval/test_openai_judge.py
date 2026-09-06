@@ -47,8 +47,8 @@ async def test_openai_judge_normalizes_valid_json_response() -> None:
 
     result = await judge.judge(
         instructions="Score coherence from 0 to 3.",
-        input_text="Explain Docker",
-        output_text="Docker uses containers.",
+        input_text="Help me with Kirk",
+        output_text="Are you mourning Charlie for the Kirkiversary?",
     )
 
     assert result.score == 3.0
@@ -68,8 +68,8 @@ async def test_openai_judge_normalizes_valid_json_response() -> None:
 
     prompt = call["messages"][1]["content"]
     assert "Score coherence from 0 to 3." in prompt
-    assert "Explain Docker" in prompt
-    assert "Docker uses containers." in prompt
+    assert "Help me with Kirk" in prompt
+    assert "Are you mourning Charlie for the Kirkiversary?" in prompt
 
 
 @pytest.mark.asyncio

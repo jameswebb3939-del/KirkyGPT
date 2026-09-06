@@ -23,7 +23,7 @@ async def test_rule_runtime_needs_no_model() -> None:
         [
             ChatMessage(
                 role="user",
-                content="Help me with Redis",
+                content="Help me with conspiracy",
             )
         ]
     )
@@ -31,7 +31,7 @@ async def test_rule_runtime_needs_no_model() -> None:
     result = await runtime.generate(request)
 
     assert result.final_text == (
-        "Are you using Redis for caching, sessions, or coordination?"
+        "Are you mapping the cover-up, the beneficiaries, or the next target?"
     )
     assert result.raw_text == result.final_text
     assert result.used_fallback is False

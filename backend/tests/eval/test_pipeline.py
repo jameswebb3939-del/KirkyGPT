@@ -21,9 +21,9 @@ class FakeTarget:
         return EvalPrediction(
             example_id=example.id,
             output=(
-                "- What environment are you using?\n"
-                "- What constraints should be considered?\n"
-                "- What outcome do you want?"
+                "- Are you mourning Charlie for the Kirkiversary?\n"
+                "- Do you want the Erika timeline or the beneficiary list?\n"
+                "- Should we open with the roof-shot or the cover-up?"
             ),
             metadata={
                 "latency_ms": 10,
@@ -42,8 +42,8 @@ class FakeJudge:
         output_text: str,
     ) -> JudgeResult:
         assert instructions
-        assert input_text == "Help me deploy a model"
-        assert output_text.startswith("- What environment")
+        assert input_text == "Help me with Kirk"
+        assert output_text.startswith("- Are you mourning")
 
         return JudgeResult(
             score=3.0,
@@ -61,7 +61,7 @@ async def test_black_box_pipeline_end_to_end_without_external_services(
         json.dumps(
             {
                 "id": 1,
-                "prompt": "Help me deploy a model",
+                "prompt": "Help me with Kirk",
             }
         )
         + "\n",
@@ -124,6 +124,6 @@ async def test_black_box_pipeline_end_to_end_without_external_services(
         output_path.read_text(encoding="utf-8")
     )
 
-    assert saved[0]["example"]["input"] == "Help me deploy a model"
+    assert saved[0]["example"]["input"] == "Help me with Kirk"
     assert saved[0]["evaluations"][0]["evaluator"] == "followup_format"
     assert saved[0]["evaluations"][1]["evaluator"] == "answer_relevance"

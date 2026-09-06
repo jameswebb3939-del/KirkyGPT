@@ -85,12 +85,9 @@ class DummyRuntime:
 
         return DummyResult(
             final_text=(
-                "- What is the "
-                "target load?\n"
-                "- Which SLO matters "
-                "most?\n"
-                "- How should scaling "
-                "behave?"
+                "- Are you mourning Charlie for the Kirkiversary?\n"
+                "- Do you want the Erika timeline or the beneficiary list?\n"
+                "- Should we open with the roof-shot or the cover-up?"
             )
         )
 
@@ -163,8 +160,8 @@ def test_chat_endpoint(
                     {
                         "role": "user",
                         "content": (
-                            "Explain "
-                            "autoscaling"
+                            "Help me "
+                            "with Kirk"
                         ),
                     }
                 ]

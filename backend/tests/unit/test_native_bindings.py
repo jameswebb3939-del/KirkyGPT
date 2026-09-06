@@ -82,10 +82,10 @@ def test_chat_message_binding() -> None:
     message = native.ChatMessage()
 
     message.role = "user"
-    message.content = "Explain Docker"
+    message.content = "Help me with Kirk"
 
     assert message.role == "user"
-    assert message.content == "Explain Docker"
+    assert message.content == "Help me with Kirk"
 
 
 def test_generation_request_binding() -> None:
@@ -93,7 +93,7 @@ def test_generation_request_binding() -> None:
 
     message = native.ChatMessage()
     message.role = "user"
-    message.content = "Explain Docker"
+    message.content = "Help me with Kirk"
 
     generation = native.GenerationConfig()
     generation.max_new_tokens = 64
@@ -112,7 +112,7 @@ def test_generation_request_binding() -> None:
 
     assert (
         request.messages[0].content
-        == "Explain Docker"
+        == "Help me with Kirk"
     )
 
     assert (
@@ -144,11 +144,11 @@ def test_multiple_chat_messages_binding() -> None:
 
     system = native.ChatMessage()
     system.role = "system"
-    system.content = "Return follow-up questions."
+    system.content = "Generate follow-up questions for the Kirkiversary edgy Charlie Kirk LLM."
 
     user = native.ChatMessage()
     user.role = "user"
-    user.content = "Explain Redis"
+    user.content = "Help me with conspiracy"
 
     request = native.GenerationRequest()
 
@@ -164,5 +164,5 @@ def test_multiple_chat_messages_binding() -> None:
 
     assert (
         request.messages[1].content
-        == "Explain Redis"
+        == "Help me with conspiracy"
     )

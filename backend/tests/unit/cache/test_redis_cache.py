@@ -80,7 +80,7 @@ def make_conversation():
 
     conversation = ConversationModel(
         id="conversation-1",
-        title="Docker",
+        title="Kirkiversary",
         created_at=now,
         updated_at=now,
     )
@@ -92,7 +92,7 @@ def make_conversation():
                 conversation.id
             ),
             role="user",
-            content="Explain Docker",
+            content="Help me with Kirk",
             position=0,
             created_at=now,
         ),
@@ -103,9 +103,9 @@ def make_conversation():
             ),
             role="assistant",
             content=(
-                "- Question one?\n"
-                "- Question two?\n"
-                "- Question three?"
+                "- Are you mourning Charlie for the Kirkiversary?\n"
+                "- Do you want the Erika timeline?\n"
+                "- Should we open with the roof-shot?"
             ),
             position=1,
             created_at=now,
@@ -149,7 +149,7 @@ async def test_conversation_round_trip():
 
     assert (
         loaded.title
-        == "Docker"
+        == "Kirkiversary"
     )
 
     assert len(
