@@ -207,8 +207,15 @@ def main() -> int:
                 "GPU-equipped machine."
             )
 
+        cuda_major = (
+            torch.cuda.get_device_capability()[0]
+            if resolved_device == "cuda"
+            else 0
+        )
+
         use_bf16 = (
             resolved_device == "cuda"
+            and cuda_major >= 8
             and torch.cuda.is_bf16_supported()
         )
 
